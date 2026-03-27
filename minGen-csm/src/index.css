@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* THE FIX: Standardize colors for the PDF engine */
+#printable-report {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+/* Force all children to use standard colors and ignore OKLCH */
+#printable-report * {
+  /* This prevents Tailwind from using CSS variables for colors */
+  color: #000000 !important;
+  border-color: #000000 !important;
+  background-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Keep the white background for the main sheet */
+#printable-report, #printable-report table {
+  background-color: #ffffff !important;
+}

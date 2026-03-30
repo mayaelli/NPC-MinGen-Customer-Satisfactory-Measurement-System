@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 
-const CCEvaluationTable = ({ reportData = [], office = "ISTD", signatories = {} }) => {
+const CCEvaluationTable = ({ reportData = [], office = "ISTD", signatories = {}, period = "JANUARY TO MARCH 2026" }) => {
   
   // Helper to tally counts based on your CC1, CC2, CC3 data
   const count = (code, val) => {
@@ -37,7 +37,7 @@ const CCEvaluationTable = ({ reportData = [], office = "ISTD", signatories = {} 
         
         <div className="pt-6">
           <h1 className="text-xl uppercase font-bold tracking-tight">CSM EVALUATION SHEET</h1>
-          <p className="text-sm">FOR THE PERIOD: JANUARY TO MARCH 2026</p>
+          <p className="text-sm">FOR THE PERIOD: {period}</p>
         </div>
         
         <div className="pt-4 uppercase text-sm">

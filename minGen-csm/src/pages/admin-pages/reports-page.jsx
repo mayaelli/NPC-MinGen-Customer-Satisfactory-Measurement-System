@@ -2,6 +2,7 @@ import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import CCEvaluationTable from '../reports/CCEvaluationTable';
+import SQDEvaluationTable from '../reports/SQDEvaluationTable';
 
 export const ReportsPage = ({ data = [] }) => {
   const [activeReport, setActiveReport] = useState('cc');
@@ -9,6 +10,12 @@ export const ReportsPage = ({ data = [] }) => {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const reportRef = useRef();
 
+  const [reportPeriod, setReportPeriod] = useState({
+    range: "JANUARY TO MARCH",
+    year: "2026"
+  });
+
+  const fullPeriodString = `${reportPeriod.range} ${reportPeriod.year}`;
   // --- PDF LOGIC ---
   const handleDownloadPDF = async () => {
   const element = reportRef.current;
@@ -124,16 +131,54 @@ export const ReportsPage = ({ data = [] }) => {
             className="w-full flex justify-between items-center px-6 py-4 bg-slate-50 hover:bg-slate-100 transition-colors"
           >
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 underline decoration-indigo-500 underline-offset-4">
-              {isConfigOpen ? 'Close Signatory Settings' : 'Edit Report Signatories'}
+              {isConfigOpen ? 'Close Settings' : 'Edit Report Signatories & Period'}
             </span>
             <span className="text-xs text-slate-400">{isConfigOpen ? '▲' : '▼'}</span>
           </button>
 
           {isConfigOpen && (
-            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-              <SignatoryInput label="Prepared By" nKey="preparedName" tKey="preparedTitle" vals={signatories} update={updateSignatory} />
-              <SignatoryInput label="Reviewed By" nKey="reviewedName" tKey="reviewedTitle" vals={signatories} update={updateSignatory} />
-              <SignatoryInput label="Approved By" nKey="approvedName" tKey="approvedTitle" vals={signatories} update={updateSignatory} />
+            <div className="p-6 space-y-6">
+              {/* NEW: PERIOD SELECTION SECTION */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-6 border-b border-slate-100">
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Month Range (Quarter)</label>
+                  <select 
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    value={reportPeriod.range}
+                    onChange={(e) => setReportPeriod(prev => ({ ...prev, range: e.target.value }))}
+                  >
+                    <option value="JANUARY TO MARCH">1st Quarter (Jan - Mar)</option>
+                    <option value="APRIL TO JUNE">2nd Quarter (Apr - Jun)</option>
+                    <option value="JULY TO SEPTEMBER">3rd Quarter (Jul - Sep)</option>
+                    <option value="OCTOBER TO DECEMBER">4th Quarter (Oct - Dec)</option>
+                    <option value="JANUARY TO DECEMBER">Full Year</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Year</label>
+                  <select 
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    value={reportPeriod.year}
+                    onChange={(e) => setReportPeriod(prev => ({ ...prev, year: e.target.value }))}
+                  >
+                    {/* Generates years from 2024 up to 10 years into the future from the current date */}
+                    {Array.from(
+                      { length: (new Date().getFullYear() + 10) - 2024 + 1 }, 
+                      (_, i) => 2024 + i
+                    ).map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* EXISTING: SIGNATORIES SECTION */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <SignatoryInput label="Prepared By" nKey="preparedName" tKey="preparedTitle" vals={signatories} update={updateSignatory} />
+                <SignatoryInput label="Reviewed By" nKey="reviewedName" tKey="reviewedTitle" vals={signatories} update={updateSignatory} />
+                <SignatoryInput label="Approved By" nKey="approvedName" tKey="approvedTitle" vals={signatories} update={updateSignatory} />
+              </div>
             </div>
           )}
         </div>
@@ -162,13 +207,18 @@ export const ReportsPage = ({ data = [] }) => {
               reportData={reportData} 
               office={displayOfficeName} 
               signatories={signatories} 
+              period={fullPeriodString}
+            />
+          ) : activeReport === 'sqd' ? (
+            <SQDEvaluationTable
+              reportData={reportData}
+              office={displayOfficeName}
+              signatories={signatories}
+              period={fullPeriodString}
             />
           ) : (
-            <div 
-              className="p-20 w-[8.5in] text-center italic border border-dashed"
-              style={{ backgroundColor: '#ffffff', color: '#64748b', borderColor: '#cbd5e1' }}
-            >
-              SQD Analysis Tabulation is being prepared...
+            <div className="p-20 w-[8.5in] text-center italic bg-white border border-dashed text-slate-400">
+              Please select a report type to continue.
             </div>
           )}
         </div>

@@ -15,7 +15,6 @@ if ($method === 'OPTIONS') {
 
 try {
     if ($method === 'GET') {
-        // Updated query to include plant_name and sort by plant
         $sql = "SELECT offices.*, users.username, users.raw_password, users.role 
                 FROM offices 
                 LEFT JOIN users ON offices.id = users.office_id 
@@ -25,98 +24,131 @@ try {
     } 
     
     elseif ($method === 'POST') {
-    $data = json_decode(file_get_contents("php://input"));
-    
-    if (!empty($data->name) && !empty($data->plant_name)) {
-        try {
-            $conn->beginTransaction();
+        $data = json_decode(file_get_contents("php://input"));
+        
+        if (!empty($data->name) && !empty($data->plant_name)) {
+            try {
+                $conn->beginTransaction();
 
-            // 1. Handle Hierarchy
-            $parentId = (!empty($data->parent_id)) ? $data->parent_id : null;
-            $role = ($parentId === null) ? 'manager' : 'office';
+                $parentId = (!empty($data->parent_id)) ? $data->parent_id : null;
+                $role = ($parentId === null) ? 'manager' : 'office';
 
-            // 2. Generate System Code (Short & Clean)
-            // Takes first word of Plant + Random 3 digits (e.g., PUL-123)
-            $plantShort = strtoupper(explode(" ", $data->plant_name)[0]);
-            $finalCode = $plantShort . "-" . rand(100, 999);
+                // FIXED: Using object property accessor
+                $abbr = !empty($data->abbreviation) ? strtoupper($data->abbreviation) : '';
 
-            // 3. Insert Office
-            $stmt = $conn->prepare("INSERT INTO offices (plant_name, name, description, parent_id, code) VALUES (?, ?, ?, ?, ?)");
-            $stmt->execute([
-                $data->plant_name,
-                $data->name, 
-                $data->description ?? '',
-                $parentId,
-                $finalCode
-            ]);
+                $plantShort = strtoupper(explode(" ", $data->plant_name)[0]);
+                $finalCode = $plantShort . "-" . rand(100, 999);
 
-            $officeId = $conn->lastInsertId();
+                $stmt = $conn->prepare("INSERT INTO offices (plant_name, name, abbreviation, description, parent_id, code) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt->execute([
+                    $data->plant_name,
+                    $data->name, 
+                    $abbr, 
+                    $data->description ?? '',
+                    $parentId,
+                    $finalCode
+                ]);
 
-            // 4. PREDICTABLE USERNAME GENERATION
-            // Get first word of Plant (e.g., "Pulangi") and first word of Office (e.g., "Finance")
-            $plantPrefix = strtolower(preg_replace('/[^a-zA-Z0-0]/', '', explode(" ", $data->plant_name)[0]));
-            $officePrefix = strtolower(preg_replace('/[^a-zA-Z0-0]/', '', explode(" ", $data->name)[0]));
+                $officeId = $conn->lastInsertId();
 
-            if ($role === 'manager') {
-                // e.g., pul4-manager
-                $username = $plantPrefix . "-manager";
-            } else {
-                // e.g., pul4-finance-742
-                $username = $plantPrefix . "-" . $officePrefix . "-" . rand(100, 999);
+                // 1. Use the Abbreviation for the prefix (it's already short and unique)
+                // e.g., "Agus 1/2 HEPPC" -> "agus12heppc"
+                $plantPrefix = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $data->abbreviation));
+
+                // 2. Use the first word of the Office Name
+                // e.g., "Finance Office" -> "finance"
+                $officePrefix = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', explode(" ", $data->name)[0]));
+
+                if ($role === 'manager') {
+                    // Result: agus12heppc-manager-452
+                    $username = $plantPrefix . "-manager-" . rand(100, 999);
+                } else {
+                    // Result: agus12heppc-finance-821
+                    $username = $plantPrefix . "-" . $officePrefix . "-" . rand(100, 999);
+                }
+
+                // Password stays manageable: AGUS12HEPPC@Csm4821
+                $plainPassword = strtoupper($plantPrefix) . "@Csm" . rand(1000, 9999);
+                $hashedPassword = password_hash($plainPassword, PASSWORD_DEFAULT);
+
+                $stmtUser = $conn->prepare("INSERT INTO users (office_id, username, password, raw_password, role) VALUES (?, ?, ?, ?, ?)");
+                $stmtUser->execute([
+                    $officeId, 
+                    $username, 
+                    $hashedPassword, 
+                    $plainPassword, 
+                    $role
+                ]);
+
+                $conn->commit();
+                echo json_encode([
+                    "status" => "success", 
+                    "message" => "Account created: $username"
+                ]);
+
+            } catch (Exception $e) {
+                if ($conn->inTransaction()) $conn->rollBack();
+                echo json_encode(["status" => "error", "message" => $e->getMessage()]);
             }
-
-            // 5. PROFESSIONAL PASSWORD GENERATION
-            // format: PlantName@Csm2026 (or random if you prefer)
-            $plainPassword = strtoupper($plantPrefix) . "@Csm" . rand(1000, 9999);
-            $hashedPassword = password_hash($plainPassword, PASSWORD_DEFAULT);
-
-            // 6. Insert into Users Table
-            $stmtUser = $conn->prepare("INSERT INTO users (office_id, username, password, raw_password, role) VALUES (?, ?, ?, ?, ?)");
-            $stmtUser->execute([
-                $officeId, 
-                $username, 
-                $hashedPassword, 
-                $plainPassword, 
-                $role
-            ]);
-
-            $conn->commit();
-            echo json_encode([
-                "status" => "success", 
-                "message" => "Account created: $username",
-                "role" => $role
-            ]);
-
-        } catch (Exception $e) {
-            $conn->rollBack();
-            echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+        } else {
+            echo json_encode(["status" => "error", "message" => "Plant and Office names are required"]);
         }
-    } else {
-        echo json_encode(["status" => "error", "message" => "Plant and Office names are required"]);
     }
-}
     
     elseif ($method === 'DELETE') {
         $id = $_GET['id'];
-        // Since we re-created the table with ON DELETE CASCADE, 
-        // deleting the office will automatically delete the user record.
         $stmt = $conn->prepare("DELETE FROM offices WHERE id = ?");
         $stmt->execute([$id]);
-        
-        echo json_encode(["status" => "success", "message" => "Office and associated data removed"]);
+        echo json_encode(["status" => "success", "message" => "Data removed"]);
     }
 
     elseif ($method === 'PUT') {
         $data = json_decode(file_get_contents("php://input"));
+        
         if (!empty($data->id)) {
-            // Update both plant_name and office name
-            $stmt = $conn->prepare("UPDATE offices SET plant_name = ?, name = ?, description = ? WHERE id = ?");
-            $stmt->execute([$data->plant_name, $data->name, $data->description, $data->id]);
-            echo json_encode(["status" => "success", "message" => "Office updated!"]);
+            try {
+                $conn->beginTransaction();
+
+                // 1. Always update the Office Details
+                $stmt = $conn->prepare("UPDATE offices SET plant_name = ?, name = ?, abbreviation = ?, description = ? WHERE id = ?");
+                $stmt->execute([
+                    $data->plant_name, 
+                    $data->name, 
+                    strtoupper($data->abbreviation ?? ''), 
+                    $data->description ?? '', 
+                    $data->id
+                ]);
+
+                $message = "Office updated successfully!";
+
+                // 2. Check if a password reset was requested via a flag
+                if (!empty($data->reset_password)) {
+                    // Generate a fresh random password
+                    // Example format: NEW-4821-AG (Based on abbreviation)
+                    $cleanAbbr = strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', $data->abbreviation));
+                    $newPlainPassword = "New" . rand(1000, 9999) . "!" . substr($cleanAbbr, 0, 3);
+                    $newHashedPassword = password_hash($newPlainPassword, PASSWORD_DEFAULT);
+
+                    // Update the users table linked to this office
+                    $stmtUser = $conn->prepare("UPDATE users SET password = ?, raw_password = ? WHERE office_id = ?");
+                    $stmtUser->execute([$newHashedPassword, $newPlainPassword, $data->id]);
+                    
+                    $message = "Office updated and Password reset to: $newPlainPassword";
+                }
+
+                $conn->commit();
+                echo json_encode(["status" => "success", "message" => $message]);
+
+            } catch (Exception $e) {
+                if ($conn->inTransaction()) $conn->rollBack();
+                echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+            }
+        } else {
+            echo json_encode(["status" => "error", "message" => "Missing Office ID"]);
         }
     }
 } catch (Exception $e) {
-    if ($conn->inTransaction()) $conn->rollBack();
     http_response_code(500);
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }
+?>

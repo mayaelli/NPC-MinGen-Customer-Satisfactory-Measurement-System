@@ -69,65 +69,69 @@ const ArtaServices = () => {
 
       {/* REGISTRATION FORM CARD */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="bg-slate-50 px-6 py-3 border-b border-slate-200">
-          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Register New Service</span>
+          <div className="bg-slate-50 px-6 py-3 border-b border-slate-200">
+            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Register New Service</span>
+          </div>
+
+          <form onSubmit={handleAdd} className="p-6 space-y-5">
+            {/* ROW 1: SELECTION FILTERS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* STEP 1: SELECT PLANT */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">1. Filter Plant</label>
+                <select 
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={selectedPlant}
+                  onChange={(e) => {
+                    setSelectedPlant(e.target.value);
+                    setNewService({...newService, office_id: ''}); 
+                  }}
+                  required
+                >
+                  <option value="">-- SELECT PLANT --</option>
+                  {plants.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+
+              {/* STEP 2: SELECT OFFICE */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">2. Assign to Office</label>
+                <select 
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50 disabled:text-slate-400"
+                  value={newService.office_id}
+                  onChange={(e) => setNewService({...newService, office_id: e.target.value})}
+                  disabled={!selectedPlant}
+                  required
+                >
+                  <option value="">-- SELECT OFFICE --</option>
+                  {offices.filter(o => o.plant_name === selectedPlant).map(o => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* ROW 2: SERVICE NAME (WIDE TEXTAREA) */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">3. Name of Service (Full Title)</label>
+              <textarea 
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 uppercase placeholder:font-normal placeholder:normal-case resize-none min-h-[80px]"
+                placeholder="Enter the full service name as it appears in the Citizen's Charter..."
+                rows="3"
+                value={newService.service_name}
+                onChange={(e) => setNewService({...newService, service_name: e.target.value})}
+                required
+              />
+            </div>
+
+            {/* ROW 3: SUBMIT BUTTON */}
+            <div className="flex justify-end">
+              <button className="w-full md:w-48 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest rounded-lg transition-all shadow-md shadow-indigo-100 active:scale-95">
+                {loading ? 'PROCESSING...' : 'ADD SERVICE'}
+              </button>
+            </div>
+          </form>
         </div>
-        
-        <form onSubmit={handleAdd} className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* STEP 1: SELECT PLANT */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">1. Filter Plant</label>
-            <select 
-              className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-              value={selectedPlant}
-              onChange={(e) => {
-                setSelectedPlant(e.target.value);
-                setNewService({...newService, office_id: ''}); // Reset office on plant change
-              }}
-              required
-            >
-              <option value="">-- SELECT PLANT --</option>
-              {plants.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-
-          {/* STEP 2: SELECT OFFICE (Filtered by Plant) */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">2. Assign to Office</label>
-            <select 
-              className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50 disabled:text-slate-400"
-              value={newService.office_id}
-              onChange={(e) => setNewService({...newService, office_id: e.target.value})}
-              disabled={!selectedPlant}
-              required
-            >
-              <option value="">-- SELECT OFFICE --</option>
-              {offices.filter(o => o.plant_name === selectedPlant).map(o => (
-                <option key={o.id} value={o.id}>{o.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* STEP 3: SERVICE NAME */}
-          <div className="space-y-1 md:col-span-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">3. Name of Service</label>
-            <textarea 
-              className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 uppercase placeholder:font-normal resize-none min-h-[42px]"
-              placeholder="e.g. PROCESSING OF DISBURSEMENT VOUCHERS AND PAYROLLS"
-              rows="2"
-              value={newService.service_name}
-              onChange={(e) => setNewService({...newService, service_name: e.target.value})}
-              required
-            />
-          </div>
-
-          <div className="flex items-end">
-            <button className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest rounded-lg transition-all shadow-md shadow-indigo-100">
-              {loading ? 'ADDING...' : 'ADD SERVICE'}
-            </button>
-          </div>
-        </form>
-      </div>
 
       {/* SERVICES TABLE */}
       

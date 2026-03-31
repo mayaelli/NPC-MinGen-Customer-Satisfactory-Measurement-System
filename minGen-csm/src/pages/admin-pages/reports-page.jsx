@@ -3,6 +3,7 @@ import jsPDF from 'jspdf';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import CCEvaluationTable from '../reports/CCEvaluationTable';
 import SQDEvaluationTable from '../reports/SQDEvaluationTable';
+import CSMTabulationTable from '../reports/CSMTabulationTable';
 
 export const ReportsPage = ({ data = [] }) => {
   const [activeReport, setActiveReport] = useState('cc');
@@ -187,6 +188,8 @@ export const ReportsPage = ({ data = [] }) => {
         <div className="flex gap-4 border-b border-slate-200 mb-8">
           <button onClick={() => setActiveReport('cc')} className={`pb-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeReport === 'cc' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Part A: CC Report</button>
           <button onClick={() => setActiveReport('sqd')} className={`pb-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeReport === 'sqd' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Part B: SQD Analysis</button>
+          <button onClick={() => setActiveReport('csm-tab')} className={`pb-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeReport === 'csm-tab' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Part C: CSM Tabulation</button>
+
         </div>
       </div>
 
@@ -211,6 +214,13 @@ export const ReportsPage = ({ data = [] }) => {
             />
           ) : activeReport === 'sqd' ? (
             <SQDEvaluationTable
+              reportData={reportData}
+              office={displayOfficeName}
+              signatories={signatories}
+              period={fullPeriodString}
+            />
+          ) : activeReport === 'csm-tab' ? (
+            <CSMTabulationTable
               reportData={reportData}
               office={displayOfficeName}
               signatories={signatories}

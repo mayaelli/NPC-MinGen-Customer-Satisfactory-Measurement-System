@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Building2, ClipboardList, MessageSquare, ShieldCheck } from 'lucide-react';
 import AdminDashboard from './admin-dashboard'; 
 import OfficeManagement from './office-management';
 import ArtaServices from './arta-services';
@@ -42,6 +43,14 @@ const AdminPage = () => {
     }
   };
 
+  const IconMap = {
+    overview: LayoutDashboard,
+    office_management: Building2,
+    services: ClipboardList,
+    results: MessageSquare,
+    reports: ShieldCheck
+  };
+
   const handleLogout = () => {
     // Use a confirmation to prevent accidental clicks
     const confirmLogout = window.confirm(
@@ -74,13 +83,13 @@ const AdminPage = () => {
     }
 
     switch(activeTab) {
-      case 'overview': return <AdminDashboard data={surveys} />;
+      case 'overview': return <AdminDashboard data={surveys} user={user} />;
       case 'office_management': 
         return user.role === 'super_admin' ? <OfficeManagement /> : <AdminDashboard data={surveys} />; 
       case 'services': return <ArtaServices />;
       case 'results': return <SurveyResults data={surveys} />;
       case 'reports': return <ReportsPage data={surveys} user={user} />;
-      default: return <AdminDashboard data={surveys} />;
+      default: return <AdminDashboard data={surveys} user={user} />;
     }
   };
 
@@ -106,30 +115,40 @@ const AdminPage = () => {
         <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
           <p className="px-4 py-3 text-[9px] font-black text-white/20 uppercase tracking-[0.4em]">System Nodes</p>
           {[
-            { id: 'overview', label: 'Dashboard Overview', icon: '📊' },
-            ...(user.role === 'super_admin' ? [{ id: 'office_management', label: 'Office Directory', icon: '🏢' }] : []),
-            { id: 'services', label: 'ARTA Services', icon: '📋' },
-            { id: 'results', label: 'Feedback Stream', icon: '💬' },
-            { id: 'reports', label: 'Compliance Audit', icon: '🛡️' },
-          ].map((item) => (
-            <button 
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full group flex items-center justify-between px-4 py-4 transition-all duration-300 relative ${
-                activeTab === item.id 
-                  ? 'bg-blue-600/10 text-white' 
+            { id: 'overview', label: 'Dashboard Overview'},
+            ...(user.role === 'super_admin' ? [{ id: 'office_management', label: 'Office Directory' }] : []),
+            { id: 'services', label: 'ARTA Services' },
+            { id: 'results', label: 'Feedback Stream' },
+            { id: 'reports', label: 'Compliance Audit'},
+          ].map((item) => {
+            const DynamicIcon = IconMap[item.id];
+            return (
+              <button 
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`w-full group flex items-center justify-between px-4 py-4 transition-all duration-300 relative ${
+                  activeTab === item.id 
+                    ? 'bg-blue-600/10 text-white' 
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
             >
               <div className="flex items-center gap-3">
-                <span className="text-sm opacity-70 group-hover:scale-110 transition-transform">{item.icon}</span>
+                {DynamicIcon && (
+              <DynamicIcon 
+                size={18} 
+                strokeWidth={activeTab === item.id ? 2.5 : 2}
+                className={`transition-all duration-300 ${activeTab === item.id ? 'text-blue-400 opacity-100' : 'opacity-40 group-hover:opacity-100'}`}
+              />
+            )}
+
                 <span className="text-[11px] font-bold uppercase tracking-widest">{item.label}</span>
               </div>
               {activeTab === item.id && (
                 <div className="absolute left-0 w-1 h-full bg-blue-500 shadow-[0_0_12px_#3b82f6]"></div>
               )}
             </button>
-          ))}
+            );
+          })}
         </nav>
 
         {/* User Profile Footer */}

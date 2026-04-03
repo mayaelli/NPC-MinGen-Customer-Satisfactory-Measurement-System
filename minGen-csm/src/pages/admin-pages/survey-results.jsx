@@ -1,7 +1,8 @@
 // General User inputs
 
-import React, { useState, useEffect, useRef} from 'react';
+import React, { useState, useEffect, useRef, useMemo} from 'react';
 import html2pdf from 'html2pdf.js';
+import { Search, RotateCcw, Filter, ChevronLeft, ChevronRight, Download, Printer, FileText, PieChart, User, Calendar, Layers, X } from 'lucide-react';
 
 const A4_PRINT_STYLE = `
   @media print {
@@ -56,373 +57,334 @@ const A4_PRINT_STYLE = `
 const SurveyResults = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')) || {});
   const [selectedSurvey, setSelectedSurvey] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-
-  // Printing State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortOrder, setSortOrder] = useState('desc');
   const printRef = useRef();
 
-  const handleDownload = () => {
-  const element = printRef.current;
-  
-  const opt = {
-    margin: 0,
-    filename: `CSM_${selectedSurvey.full_name}.pdf`,
-    image: { type: 'jpeg', quality: 1.0 },
-    html2canvas: { 
-      scale: 4, 
-      useCORS: true, 
-      width: 794,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: 794,
-      letterRendering: true,
-      y: 0
+  const API_URL = 'http://localhost/MinGen%20CSM/minGen-api/survey/get_survey_results.php';
 
-    },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', putOnlyUsedFonts: true, compress: true }
-  };
-
-  html2pdf().set(opt).from(element).toPdf().get('pdf').then((pdf) => {
-    const totalPages = pdf.internal.getNumberOfPages();
-    
-    // If a blank page exists, delete it before saving
-    if (totalPages > 1) {
-      pdf.deletePage(totalPages);
-    }
-  }).save();
-};
-
-  useEffect(() => {
-    fetchResults();
-  }, []);
+  useEffect(() => { fetchResults(); }, []);
 
   const fetchResults = () => {
     setLoading(true);
-    fetch('http://localhost/MinGen%20CSM/minGen-api/survey/get_survey_results.php')
+    fetch(API_URL, { method: 'GET', credentials: 'include' })
       .then(res => res.json())
       .then(res => {
         if (res.status === 'success') setData(res.data);
         setLoading(false);
+      })
+      .catch(err => {
+        console.error("Fetch Error:", err);
+        setLoading(false);
       });
   };
 
-  const handlePrint = () => {   
-    window.print(); 
-  }
+  const handleDownload = () => {
+    const element = printRef.current;
+    const opt = {
+      margin: 0,
+      filename: `CSM_${selectedSurvey.full_name}.pdf`,
+      image: { type: 'jpeg', quality: 1.0 },
+      html2canvas: { scale: 4, useCORS: true, width: 794, windowWidth: 794 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).toPdf().get('pdf').then((pdf) => {
+      const totalPages = pdf.internal.getNumberOfPages();
+      if (totalPages > 1) pdf.deletePage(totalPages);
+    }).save();
+  };
 
-  // General User Mapper
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
-  
-  const filteredData = data
-  .filter(item => {
-    // We convert everything to lowercase safely
-    // If the field is null, it defaults to an empty string ""
-    const name = (item.full_name || "").toLowerCase();
-    const email = (item.email || "").toLowerCase();
-    const office = (item.office_name || "").toLowerCase();
-    const service = (item.service_name || "").toLowerCase();
-    const search = searchTerm.toLowerCase();
+  const filteredData = useMemo(() => {
+    return data
+      .filter(item => {
+        const name = (item.full_name || "").toLowerCase();
+        const email = (item.email || "").toLowerCase();
+        const office = (item.office_name || "").toLowerCase();
+        const service = (item.service_name || "").toLowerCase();
+        const search = searchTerm.toLowerCase();
+        return name.includes(search) || email.includes(search) || office.includes(search) || service.includes(search);
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.created_at);
+        const dateB = new Date(b.created_at);
+        return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      });
+  }, [data, searchTerm, sortOrder]);
 
-    return (
-      name.includes(search) ||
-      email.includes(search) ||
-      office.includes(search) ||
-      service.includes(search)
-    );
-    })
-    .sort((a, b) => {
-      const dateA = new Date(a.created_at);
-      const dateB = new Date(b.created_at);
-      // Standard sorting logic
-      return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
-    });
-
-  // Pagination slice state
   const itemsPerPage = 10;
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem); 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
-  const isSearching = searchTerm.length >= 2;
-
-  const isNameSearch = filteredData.some(item =>
-    item.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const userInsights = (isSearching && filteredData.length > 0) ? {
-    title: isNameSearch ? filteredData[0]?.full_name : searchTerm.toUpperCase(),
-    subtitle: isNameSearch ? "Master Profile" : "Division / Service Overview",
-    
+  const userInsights = (searchTerm.length >= 2 && filteredData.length > 0) ? {
+    title: user.role === 'manager' ? `${user.plant_name} Overview` : "Unit Dashboard",
+    subtitle: user.role === 'manager' ? "Department-Wide Feed" : "Office Feed",
     totalVisits: filteredData.length,
     offices: [...new Set(filteredData.map(d => d.office_name))],
     services: [...new Set(filteredData.map(d => d.service_name))],
     avgRating: (filteredData.reduce((acc, curr) => acc + parseFloat(curr.avg_rating || 0), 0) / filteredData.length).toFixed(1),
-    firstVisit: filteredData.length > 0 
-      ? new Date(Math.min(...filteredData.map(d => new Date(d.created_at)))).toLocaleDateString()
-      : "N/A"
   } : null;
 
-  if (loading) return <div className="p-10 text-center text-slate-400 font-bold animate-pulse uppercase">Syncing Records...</div>;
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+      <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] animate-pulse">Syncing Secure Records...</p>
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-
-      <style>{A4_PRINT_STYLE}</style>
-      {/* FEED TABLE (Admin View) */}
-      <div className="flex justify-between items-end print:hidden">
+    <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8 antialiased">
+      
+      {/* HEADER SECTION */}
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-8 gap-4 print:hidden">
         <div>
-          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Survey Feed</h2>
-          <p className="text-sm text-slate-500 font-medium">Click to view formal MGG-IMS-006.F01 document.</p>
+          <div className="flex items-center gap-2 mb-2">
+             <span className="bg-[#001d3d] text-white px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest">Data Stream</span>
+             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">Live Submission Logs</span>
+          </div>
+          <h1 className="text-3xl font-black tracking-tighter text-slate-900 uppercase italic flex items-center gap-3">
+            <div className="w-2 h-8 bg-blue-600 rounded-full"></div>
+            {user.role === 'manager' ? `${user.plant_name} Submissions` : 'Survey Feed'}
+          </h1>
+          <p className="text-[10px] font-bold text-blue-600/60 uppercase tracking-widest mt-1">
+            {user.role === 'manager' && "Monitoring all offices under your jurisdiction"}
+            {user.role === 'office' && !user.is_auditor_enabled && `Restricted to ${user.office_name}`}
+            {(user.role === 'super_admin' || user.is_auditor_enabled == 1) && "Global System Oversight Access"}
+          </p>
         </div>
-        <button onClick={fetchResults} className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded text-white font-bold text-[10px] uppercase tracking-widest transition shadow-lg">
-          Refresh Feed ({data.length})
+
+        <div className="flex items-center gap-3">
+          {(user.role === 'super_admin' || user.role === 'manager' || user.is_auditor_enabled == 1) && (
+            <button onClick={fetchResults} className="flex items-center gap-2 bg-[#001d3d] hover:bg-blue-800 px-5 py-3 rounded-xl text-white font-black text-[10px] uppercase tracking-widest transition-all shadow-lg active:scale-95">
+              <RotateCcw size={14} /> Refresh ({data.length})
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* CONTROLS */}
+      <div className="flex flex-col md:flex-row gap-4 items-center justify-between print:hidden">
+        <div className="relative w-full max-w-md group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={18} />
+          <input 
+            type="text" 
+            placeholder="FILTER BY CLIENT, OFFICE, OR SERVICE..." 
+            className="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-200 rounded-2xl text-[11px] font-black uppercase tracking-tight focus:ring-2 focus:ring-blue-600 outline-none transition-all shadow-sm"
+            value={searchTerm}
+            onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}}
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500">
+              <X size={18} />
+            </button>
+          )}
+        </div>
+
+        <button 
+          onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+          className="bg-white border border-slate-200 px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-3 shadow-sm active:scale-95"
+        >
+          <Filter size={14} className="text-blue-600" />
+          {sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}
         </button>
       </div>
 
-      
-      {/* SEARCH & SORT CONTROLS */}
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-          <div className="relative w-full max-w-md group">
-            <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-            </span>
-            <input 
-              type="text" 
-              placeholder="Search Client Name (e.g. Faye)..." 
-              className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
-              value={searchTerm}
-              onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}}
-            />
-            {isSearching && (
-              <button 
-                onClick={() => setSearchTerm("")}
-                className="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-rose-500"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            )}
+      {/* INSIGHT MAPPING TABLE */}
+      {userInsights && (
+        <div className="animate-in slide-in-from-top-4 duration-500">
+          <div className="bg-[#001d3d] rounded-2xl shadow-2xl overflow-hidden border border-blue-900 ring-4 ring-blue-50/50">
+            <div className="p-6 md:p-8 grid grid-cols-1 lg:grid-cols-4 gap-8 items-center">
+              <div className="lg:col-span-1 border-r border-blue-800/50 pr-6">
+                <p className="text-[9px] text-blue-400 font-black uppercase tracking-[0.2em] mb-1">{userInsights.subtitle}</p>
+                <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">{userInsights.title}</h2>
+                <div className="flex items-center gap-2 mt-2">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                    <p className="text-[10px] text-blue-300 font-bold uppercase">{userInsights.totalVisits} Matches Found</p>
+                </div>
+              </div>
+              
+              <div className="lg:col-span-1">
+                <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-2 flex items-center gap-2"><PieChart size={12}/> Unit Reach</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {userInsights.offices.map((off, i) => (
+                    <span key={i} className="bg-blue-500/20 border border-blue-400/30 px-2 py-1 rounded-lg text-[9px] font-black uppercase text-blue-100">
+                      {off}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="lg:col-span-1">
+                <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-2 flex items-center gap-2"><Layers size={12}/> Service Context</p>
+                <p className="text-[10px] text-blue-100/80 leading-relaxed font-bold uppercase">
+                  {userInsights.services.slice(0, 3).join(" • ")}{userInsights.services.length > 3 && "..."}
+                </p>
+              </div>
+
+              <div className="lg:col-span-1 flex flex-col items-center justify-center bg-blue-800/30 rounded-2xl py-4 border border-blue-700/50">
+                <p className="text-[9px] text-blue-300 font-black uppercase tracking-widest mb-1">Index Rating</p>
+                <div className="text-4xl font-black text-white italic tracking-tighter">
+                  {userInsights.avgRating}
+                </div>
+              </div>
+            </div>
           </div>
-
-          <button 
-            onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
-            className="bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"
-          >
-            {sortOrder === 'desc' ? '▼ Newest First' : '▲ Oldest First'}
-          </button>
-        </div>
-
-        {/* SEARCH EMPTY STATE */}
-      {searchTerm.length > 0 && filteredData.length === 0 && (
-        <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-16 text-center animate-in fade-in zoom-in-95 duration-300 my-6">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-full mb-6 shadow-sm">
-            <svg 
-              className="w-10 h-10 text-slate-300" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth="1.5" 
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" 
-              />
-            </svg>
-          </div>
-          
-          <h3 className="text-slate-900 font-black text-xl uppercase tracking-tight">
-            No Records Found
-          </h3>
-          
-          <p className="text-slate-500 text-sm max-w-sm mx-auto mt-3 leading-relaxed">
-            We couldn't find any results for <span className="font-bold text-indigo-600">"{searchTerm}"</span>. 
-            Try checking the spelling or searching for a different office or service.
-          </p>
-
-          <button 
-            onClick={() => setSearchTerm("")}
-            className="mt-8 px-6 py-2 bg-white border border-slate-200 rounded-full text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:bg-slate-50 hover:text-indigo-600 transition-all shadow-sm"
-          >
-            Clear Search
-          </button>
         </div>
       )}
-        
 
-        {/* INSIGHT MAPPING TABLE (Top View) */}
-        {userInsights && (
-          <div className="animate-in fade-in zoom-in-95 duration-300">
-            <div className="flex items-center gap-2 mb-3 px-1">
-              <div className="h-4 w-1 bg-indigo-500 rounded-full"></div>
-              <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Mapping Results for "{searchTerm}"</h2>
-            </div>
-            <div className="bg-indigo-900 rounded-xl shadow-xl overflow-hidden border border-indigo-800">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-indigo-950/50 text-[8px] font-bold text-indigo-300 uppercase tracking-[0.2em]">
-                    <th className="px-6 py-3">Master Profile</th>
-                    <th className="px-6 py-3">Department Reach</th>
-                    <th className="px-6 py-3">Services History</th>
-                    <th className="px-6 py-3 text-center">Lifetime Rating</th>
-                  </tr>
-                </thead>
-                <tbody className="text-white border-t border-indigo-800/50">
-                  <tr>
-                    <td className="px-6 py-4">
-                      <div>
-                        <p className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest">
-                          {userInsights.subtitle}
+      {/* MAIN DATA TABLE */}
+      <div className="bg-white border border-slate-200 rounded-3xl shadow-xl overflow-hidden animate-in fade-in duration-700">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                <th className="px-8 py-5 w-24">Serial</th>
+                <th className="px-8 py-5">Client Identity</th>
+                <th className="px-8 py-5">Operational Node</th>
+                <th className="px-8 py-5 text-center">CSM Score</th>
+                <th className="px-8 py-5 text-right">Timestamp</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {currentItems.length > 0 ? currentItems.map((row, index) => {
+                const seqId = sortOrder === 'desc' 
+                  ? filteredData.length - (indexOfFirstItem + index) 
+                  : indexOfFirstItem + index + 1;
+
+                return (
+                  <tr 
+                    key={row.id} 
+                    onClick={() => setSelectedSurvey(row)} 
+                    className="hover:bg-blue-50/50 cursor-pointer transition-all group border-l-4 border-transparent hover:border-blue-600"
+                  >
+                    <td className="px-8 py-6 font-mono text-[11px] font-black text-slate-300 group-hover:text-blue-600 transition-colors">
+                      #{String(seqId).padStart(3, '0')}
+                    </td>
+                    <td className="px-8 py-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                          <User size={14} />
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-black text-slate-700 uppercase tracking-tight">{row.full_name}</p>
+                          <p className="text-[9px] font-bold text-slate-400 lowercase">{row.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-8 py-6 uppercase">
+                      <p className="text-[11px] font-black text-slate-600 tracking-tighter">{row.office_name}</p>
+                      <p className="text-[9px] font-bold text-slate-400 italic truncate max-w-[200px] mt-0.5">{row.service_name}</p>
+                    </td>
+                    <td className="px-8 py-6 text-center">
+                      <span className={`inline-flex items-center justify-center w-12 py-1.5 rounded-xl font-black text-[11px] shadow-sm ${
+                        parseFloat(row.avg_rating) >= 4 
+                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-100' 
+                          : 'text-slate-800 bg-slate-100 border border-slate-200'
+                      }`}>
+                        {parseFloat(row.avg_rating || 0).toFixed(1)}
+                      </span>
+                    </td>
+                    <td className="px-8 py-6 text-right">
+                      <div className="flex flex-col items-end">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter flex items-center gap-1.5">
+                           <Calendar size={12}/> {new Date(row.created_at).toLocaleDateString()}
                         </p>
-                        <h2 className="text-xl font-black uppercase">
-                          {userInsights.title}
-                        </h2>
-                        <p className="text-[10px] text-indigo-400 mt-1">
-                          {userInsights.totalVisits} Records matching your search
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {userInsights.offices.map((off, i) => (
-                          <span key={i} className="bg-indigo-500/20 border border-indigo-400/30 px-2 py-0.5 rounded text-[9px] font-bold uppercase text-indigo-200">
-                            {off}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-[10px] text-indigo-200/80 leading-relaxed italic max-w-md">
-                        {userInsights.services.join(" • ")}
-                      </p>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="inline-block px-4 py-1 bg-white text-indigo-900 rounded-lg font-black text-base shadow-lg">
-                        {userInsights.avgRating}
                       </div>
                     </td>
                   </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+                );
+              }) : (
+                <tr>
+                  <td colSpan="5" className="px-8 py-20 text-center">
+                    <div className="flex flex-col items-center justify-center opacity-30">
+                      <Search size={48} className="mb-4" />
+                      <p className="text-[11px] font-black uppercase tracking-[0.4em]">No matching records found</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
+        {/* PAGINATION */}
+        <div className="flex flex-col md:flex-row items-center justify-between px-8 py-6 bg-slate-50/50 border-t border-slate-100 gap-4">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            Showing <span className="text-slate-700">{indexOfFirstItem + 1}</span> to <span className="text-slate-700">{Math.min(indexOfLastItem, filteredData.length)}</span> of {filteredData.length} Registry Entries
+          </p>
 
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden print:hidden">
-
-        {/* 1. THE SEARCH EMPTY STATE (Place this before the table) */}
-          {searchTerm.length > 0 && filteredData.length === 0 && (
-            <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-16 text-center animate-in fade-in zoom-in-95 duration-300 my-6">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-full mb-6 shadow-sm">
-                <svg className="w-10 h-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+          <div className="flex items-center gap-4">
+            <div className="flex bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="p-3 hover:bg-slate-50 text-slate-400 hover:text-blue-600 disabled:opacity-20 transition-all border-r border-slate-100"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <div className="px-6 flex items-center text-[10px] font-black text-slate-700 uppercase tracking-widest italic bg-white">
+                Block {currentPage} / {totalPages}
               </div>
-              <h3 className="text-slate-900 font-black text-xl uppercase tracking-tight">No Records Found</h3>
-              <p className="text-slate-500 text-sm max-w-sm mx-auto mt-3">
-                We couldn't find anything matching <span className="font-bold text-indigo-600">"{searchTerm}"</span>.
-              </p>
-              <button onClick={() => setSearchTerm("")} className="mt-8 px-6 py-2 bg-white border border-slate-200 rounded-full text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-indigo-600 transition-all shadow-sm">
-                Clear Search
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="p-3 hover:bg-slate-50 text-slate-400 hover:text-blue-600 disabled:opacity-20 transition-all border-l border-slate-100"
+              >
+                <ChevronRight size={16} />
               </button>
             </div>
-          )}
-
-          {/* 2. THE TABLE (Only renders if there is data to show) */}
-          {filteredData.length > 0 && (
-            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mt-6 animate-in fade-in duration-500">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    <th className="px-6 py-4 w-16">#</th>
-                    <th className="px-6 py-4">Client</th>
-                    <th className="px-6 py-4">Office/Service</th>
-                    <th className="px-6 py-4 text-center">Rating</th>
-                    <th className="px-6 py-4 text-right">Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {currentItems.map((row, index) => {
-                    const seqId = sortOrder === 'desc' 
-                      ? filteredData.length - (indexOfFirstItem + index) 
-                      : indexOfFirstItem + index + 1;
-
-                    return (
-                      <tr key={row.id} onClick={() => setSelectedSurvey(row)} className="hover:bg-indigo-50/50 cursor-pointer transition-colors group">
-                        <td className="px-6 py-4 text-[10px] font-black text-slate-300">#{String(seqId).padStart(3, '0')}</td>
-                        <td className="px-6 py-4">
-                          <p className="text-xs font-bold text-slate-700 uppercase">{row.full_name}</p>
-                        </td>
-                        <td className="px-6 py-4 uppercase text-[10px]">
-                          <p className="font-bold text-slate-600">{row.office_name}</p>
-                          <p className="text-slate-400 italic truncate max-w-[180px]">{row.service_name}</p>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className={`inline-block px-3 py-1 rounded-lg font-black text-xs ${
-                            parseFloat(row.avg_rating) >= 4 ? 'text-emerald-600 bg-emerald-50' : 'text-slate-800 bg-slate-100'
-                          }`}>
-                            {parseFloat(row.avg_rating || 0).toFixed(1)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right text-[10px] font-bold text-slate-400">
-                          {new Date(row.created_at).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              
-              {/* YOUR PAGINATION COMPONENT GOES HERE */}
-              <div className="flex items-center justify-between px-6 py-4 bg-white border-t border-slate-100">
-                      {/* Info text */}
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, data.length)} of {data.length} Results
-                      </p>
-
-                      {/* Navigation Arrows */}
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                          disabled={currentPage === 1}
-                          className={`p-2 rounded-lg border transition-all ${
-                            currentPage === 1 
-                            ? 'opacity-30 cursor-not-allowed border-slate-200' 
-                            : 'hover:bg-indigo-50 border-indigo-100 text-indigo-600'
-                          }`}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                          </svg>
-                        </button>
-
-                        <div className="flex items-center px-4 text-xs font-black text-slate-700 bg-slate-50 rounded-lg border border-slate-200">
-                          {currentPage} / {totalPages}
-                        </div>
-
-                        <button
-                          onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                          disabled={currentPage === totalPages}
-                          className={`p-2 rounded-lg border transition-all ${
-                            currentPage === totalPages 
-                            ? 'opacity-30 cursor-not-allowed border-slate-200' 
-                            : 'hover:bg-indigo-50 border-indigo-100 text-indigo-600'
-                          }`}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-            </div>
-          )}
-        
-
+          </div>
+        </div>
       </div>
+      
+      {/* MODAL / DETAILS VIEW (Preserved Logic) */}
+      {selectedSurvey && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#001d3d]/90 backdrop-blur-md animate-in fade-in duration-300">
+           {/* Detailed view content remains similar, just styled with rounded-3xl and slate/indigo accents */}
+           <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl overflow-hidden">
+              <div className="px-10 py-8 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                    <FileText size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter">{selectedSurvey.full_name}</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Entry ID: {selectedSurvey.id}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedSurvey(null)} className="p-3 hover:bg-white rounded-full transition-all text-slate-400 hover:text-red-500 shadow-sm border border-transparent hover:border-slate-100">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="p-10">
+                <div className="grid grid-cols-2 gap-8 mb-8">
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Operational Office</p>
+                    <p className="text-sm font-black text-slate-800 uppercase italic">{selectedSurvey.office_name}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Service Profile</p>
+                    <p className="text-sm font-black text-slate-800 uppercase italic">{selectedSurvey.service_name}</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 pt-8 border-t border-slate-100">
+                  <button onClick={handleDownload} className="flex-1 flex items-center justify-center gap-2 py-4 bg-[#001d3d] text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-800 transition-all active:scale-95 shadow-xl">
+                    <Download size={16} /> Export PDF Document
+                  </button>
+                  <button onClick={() => window.print()} className="flex items-center justify-center px-6 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95">
+                    <Printer size={16} />
+                  </button>
+                </div>
+              </div>
+           </div>
+        </div>
+      )}
 
       {/* FORM OVERLAY (THE FORMAL TEMPLATE) */}
       {selectedSurvey && (

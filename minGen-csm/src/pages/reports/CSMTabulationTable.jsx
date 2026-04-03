@@ -4,7 +4,7 @@ const CSMTabulationTable = ({
   services = [], 
   office = "ISTD", 
   period = "OCTOBER TO DECEMBER 2025", 
-  tabulatedBy = { name: "RENATO O. VERDON", title: "PROGRAMMER II" } 
+  signatories = {}
 }) => {
 
   // 1. Logic for External vs Internal (Based on your report image)
@@ -141,18 +141,24 @@ const CSMTabulationTable = ({
         </div>
       </div>
 
-      {/* 5. TABULATED BY (Signatory) */}
-      <div className="mt-12">
-        <SignatoryBox 
-          label="Tabulated by:" 
-          name={tabulatedBy.name} 
-          title={tabulatedBy.title} 
-        />
+      <div className="mt-10">
+        <div className="w-[50%] flex flex-col">
+          <p className="mb-10 text-left text-[13px] italic">
+            {signatories.additionalLabel || "Tabulated by"}:
+          </p>
+          <div className="flex flex-col text-center">
+            <p className="uppercase font-bold text-[15px] border-b border-black min-h-[22px]">
+              {signatories.additionalName}
+            </p>
+            <p className="text-[11px] uppercase mt-1">
+              {signatories.additionalTitle}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* FOOTER */}
       <div className="mt-auto pt-10 text-[10px] font-mono flex justify-between uppercase text-gray-500">
-        <span>Continue on a separate sheet if necessary</span>
         <span>MGG-IMS-006.F02 Rev. No. 0</span>
       </div>
     </div>

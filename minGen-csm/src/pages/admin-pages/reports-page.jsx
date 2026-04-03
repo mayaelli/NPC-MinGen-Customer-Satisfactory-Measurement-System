@@ -1,12 +1,26 @@
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { 
+  FileDown, 
+  Settings2, 
+  ChevronDown, 
+  ChevronUp, 
+  LayoutDashboard, 
+  ClipboardCheck, 
+  FileBarChart, 
+  Building2,
+  CalendarDays,
+  UserCheck,
+  FileText
+} from 'lucide-react';
 import CCEvaluationTable from '../reports/CCEvaluationTable';
 import SQDEvaluationTable from '../reports/SQDEvaluationTable';
 import CSMTabulationTable from '../reports/CSMTabulationTable';
+import ScorePerService from '../reports/ScorePerService';
 
 export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'ISTD', plant_id: 'OMD'} }) => {
-
+  // Logic Preserved
   const isGlobalView = ['super_admin', 'auditor'].includes(user.role);
   const isManager = user.role === 'manager';
   const isOffice = user.role === 'office';
@@ -22,52 +36,41 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
   });
 
   const fullPeriodString = `${reportPeriod.range} ${reportPeriod.year}`;
-  // --- PDF LOGIC ---
+
   const handleDownloadPDF = async () => {
-  const element = reportRef.current;
-  if (!element) return;
+    const element = reportRef.current;
+    if (!element) return;
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.getElementById('printable-report');
+          if (el) el.style.colorScheme = 'light';
+        }
+      });
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 10; 
+      const imgWidth = pageWidth - (margin * 2);
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight);
+      pdf.save(`CSM_Report_${targetOffice}.pdf`);
+    } catch (err) {
+      console.error("PDF Error:", err);
+    }
+  };
 
-  try {
-    // 2. We use 'html2canvas' directly (the pro version supports oklch)
-    console.log("Capturing report...");
-    
-    const canvas = await html2canvas(element, {
-      scale: 2, // Keeps it sharp but not too heavy
-      useCORS: true,
-      logging: false,
-      backgroundColor: '#ffffff',
-      // This is the secret sauce for Tailwind v4:
-      onclone: (clonedDoc) => {
-        const el = clonedDoc.getElementById('printable-report');
-        if (el) el.style.colorScheme = 'light';
-      }
-    });
-
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const margin = 10; 
-    const imgWidth = pageWidth - (margin * 2);
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-    pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight);
-    pdf.save(`CSM_Report_${targetOffice}.pdf`);
-    
-    console.log("Success!");
-  } catch (err) {
-    console.error("PDF Error:", err);
-    alert("Snapshot failed. Please check the console for oklch errors.");
-  }
-};
-
-  // --- SIGNATORIES STATE ---
   const [signatories, setSignatories] = useState(() => {
     const saved = localStorage.getItem('report_signatories');
     return saved ? JSON.parse(saved) : {
       preparedName: '', preparedTitle: '',
       reviewedName: '', reviewedTitle: '',
-      approvedName: '', approvedTitle: ''
+      approvedName: '', approvedTitle: '',
+      additionalName: '', additionalTitle: '', additionalLabel: 'Noted By'
     };
   });
 
@@ -79,60 +82,55 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
     setSignatories(prev => ({ ...prev, [key]: value }));
   };
 
-  // --- DATA FILTERING ---
   const reportData = useMemo(() => {
     if (!data || data.length === 0) return [];
-    
-    // 1. If Auditor/Admin and 'All' is selected
     if (isGlobalView && targetOffice === 'All') return data;
-    
-    // 2. Otherwise filter by the selected targetOffice
     return data.filter(d => d.office_name?.toString().toUpperCase() === targetOffice.toUpperCase());
   }, [data, targetOffice, isGlobalView]);
 
   const offices = useMemo(() => {
     let list = [];
     if (isGlobalView) {
-      // Auditors see everything
       const unique = [...new Set(data.map(d => d.office_name?.toUpperCase()))].filter(Boolean).sort();
       list = ['All', ...unique];
     } else if (isManager) {
-      // Managers only see offices in their plant
       const deptOffices = data.filter(d => d.plant_name === user.plant_name);
       const unique = [...new Set(deptOffices.map(d => d.office_name?.toUpperCase()))].filter(Boolean).sort();
       list = unique;
     } else {
-      // Regular office only sees themselves
       list = [user.office_name.toUpperCase()];
     }
     return list;
   }, [data, user]);
 
-  // Determine the office display name for the child component
   const displayOfficeName = targetOffice === 'All' ? 'NPC Mindanao Generation' : targetOffice;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 sm:p-8">
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-10 font-sans selection:bg-indigo-100">
       
-      {/* 1. TOP CONTROLS (Hidden in PDF) */}
-      <div className="max-w-5xl mx-auto mb-8">
-        <div className="flex justify-between items-end mb-6">
+      {/* HEADER & GLOBAL CONTROLS */}
+      <div className="max-w-5xl mx-auto mb-10">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
           <div>
-            <h1 className="text-2xl font-black text-[#002855] uppercase tracking-tight">Compliance Center</h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">
-                ROLE: {user.role} | RAW DATA: {data.length} | FILTERED: {reportData.length}
+            <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></div>
+                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.3em]">Compliance Intelligence</span>
+            </div>
+            <h1 className="text-4xl font-black text-[#001d3d] uppercase tracking-tighter italic">Compliance Center</h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 flex items-center gap-2">
+               <UserCheck size={12} className="text-slate-300"/> Access: {user.role} <span className="text-slate-200">|</span> 
+               <LayoutDashboard size={12} className="text-slate-300"/> Samples: {reportData.length} of {data.length}
             </p>
           </div>
           
-          <div className="flex items-center gap-4">
-            {/* RBAC: Hide dropdown if it's just a single office user */}
+          <div className="flex items-center gap-3 w-full md:w-auto">
             {!isOffice && (
-              <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
-                <span className="text-[10px] font-black text-slate-400 uppercase pl-2">Scope:</span>
+              <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm transition-all focus-within:ring-2 focus-within:ring-indigo-500/20">
+                <Building2 size={14} className="text-slate-400" />
                 <select 
                   value={targetOffice}
                   onChange={(e) => setTargetOffice(e.target.value)}
-                  className="text-xs font-bold text-indigo-600 bg-transparent outline-none pr-4 cursor-pointer uppercase"
+                  className="text-[11px] font-black text-indigo-900 bg-transparent outline-none cursor-pointer uppercase tracking-tight"
                 >
                   {offices.map(off => <option key={off} value={off}>{off}</option>)}
                 </select>
@@ -141,33 +139,38 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
 
             <button 
               onClick={handleDownloadPDF}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all active:scale-95 flex items-center gap-2 text-xs"
+              className="bg-[#001d3d] hover:bg-indigo-800 text-white px-8 py-3.5 rounded-2xl font-black shadow-xl shadow-indigo-100 transition-all active:scale-95 flex items-center gap-3 text-[10px] uppercase tracking-widest"
             >
-              📥 DOWNLOAD PDF
+              <FileDown size={16} /> Download Report
             </button>
           </div>
         </div>
 
-        {/* SIGNATORY CONFIG PANEL */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-8">
+        {/* SETTINGS PANEL */}
+        <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden mb-10 transition-all">
           <button 
             onClick={() => setIsConfigOpen(!isConfigOpen)}
-            className="w-full flex justify-between items-center px-6 py-4 bg-slate-50 hover:bg-slate-100 transition-colors"
+            className="w-full flex justify-between items-center px-8 py-5 hover:bg-slate-50 transition-colors group"
           >
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 underline decoration-indigo-500 underline-offset-4">
-              {isConfigOpen ? 'Close Settings' : 'Edit Report Signatories & Period'}
-            </span>
-            <span className="text-xs text-slate-400">{isConfigOpen ? '▲' : '▼'}</span>
+            <div className="flex items-center gap-3">
+                <Settings2 size={18} className={`transition-transform duration-500 ${isConfigOpen ? 'rotate-180 text-indigo-600' : 'text-slate-400'}`} />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 group-hover:text-indigo-600">
+                  Configure Report Parameters & Signatories
+                </span>
+            </div>
+            {isConfigOpen ? <ChevronUp size={16} className="text-slate-300"/> : <ChevronDown size={16} className="text-slate-300"/>}
           </button>
 
           {isConfigOpen && (
-            <div className="p-6 space-y-6">
-              {/* NEW: PERIOD SELECTION SECTION */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-6 border-b border-slate-100">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Month Range (Quarter)</label>
+            <div className="p-10 space-y-10 animate-in fade-in slide-in-from-top-2 duration-300">
+              {/* PERIOD SELECTION */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-10 border-b border-slate-100">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <CalendarDays size={14} className="text-indigo-500"/> Reporting Period (Quarterly)
+                  </label>
                   <select 
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-[11px] font-black text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all appearance-none uppercase"
                     value={reportPeriod.range}
                     onChange={(e) => setReportPeriod(prev => ({ ...prev, range: e.target.value }))}
                   >
@@ -179,79 +182,96 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
                   </select>
                 </div>
 
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Year</label>
-                  <select 
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    value={reportPeriod.year}
-                    onChange={(e) => setReportPeriod(prev => ({ ...prev, year: e.target.value }))}
-                  >
-                    {/* Generates years from 2024 up to 10 years into the future from the current date */}
-                    {Array.from(
-                      { length: (new Date().getFullYear() + 10) - 2024 + 1 }, 
-                      (_, i) => 2024 + i
-                    ).map(y => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Fiscal Year
+                  </label>
+                  <div className="relative">
+                    <select 
+                      className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-[11px] font-black text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all appearance-none cursor-pointer"
+                      value={reportPeriod.year}
+                      onChange={(e) => setReportPeriod(prev => ({ ...prev, year: e.target.value }))}
+                    >
+                      {/* Generates a dynamic list starting from 2024 
+                          up to 50 years beyond the current date 
+                      */}
+                      {Array.from(
+                        { length: (new Date().getFullYear() + 50) - 2024 + 1 }, 
+                        (_, i) => 2024 + i
+                      ).map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                    
+                    {/* Visual indicator since appearance-none removes the default arrow */}
+                    <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* EXISTING: SIGNATORIES SECTION */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* SIGNATORIES SECTION */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <SignatoryInput label="Prepared By" nKey="preparedName" tKey="preparedTitle" vals={signatories} update={updateSignatory} />
                 <SignatoryInput label="Reviewed By" nKey="reviewedName" tKey="reviewedTitle" vals={signatories} update={updateSignatory} />
                 <SignatoryInput label="Approved By" nKey="approvedName" tKey="approvedTitle" vals={signatories} update={updateSignatory} />
+
+                {/* DYNAMIC SIGNATORY SLOT */}
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-black text-rose-500 uppercase tracking-[0.2em]">Custom Role Label</span>
+                    <input 
+                      type="text"
+                      placeholder="E.G. NOTED BY / VERIFIED BY"
+                      className="bg-white border-b-2 border-slate-200 px-1 py-1 text-[10px] font-black uppercase outline-none focus:border-indigo-500 transition-all text-slate-700 placeholder:text-slate-300"
+                      value={signatories.additionalLabel || ''}
+                      onChange={(e) => updateSignatory('additionalLabel', e.target.value)}
+                    />
+                  </div>
+                  <SignatoryInput 
+                    label={signatories.additionalLabel || "Additional Signatory"} 
+                    nKey="additionalName" 
+                    tKey="additionalTitle" 
+                    vals={signatories} 
+                    update={updateSignatory} 
+                  />
+                </div>
               </div>
             </div>
           )}
         </div>
 
         {/* TAB NAVIGATION */}
-        <div className="flex gap-4 border-b border-slate-200 mb-8">
-          <button onClick={() => setActiveReport('cc')} className={`pb-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeReport === 'cc' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Part A: CC Report</button>
-          <button onClick={() => setActiveReport('sqd')} className={`pb-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeReport === 'sqd' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Part B: SQD Analysis</button>
-          <button onClick={() => setActiveReport('csm-tab')} className={`pb-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeReport === 'csm-tab' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Part C: CSM Tabulation</button>
-
+        <div className="flex flex-wrap gap-2 p-1.5 bg-slate-200/50 rounded-2xl backdrop-blur-sm w-fit mx-auto mb-12 border border-slate-200">
+          <TabButton active={activeReport === 'cc'} onClick={() => setActiveReport('cc')} icon={<ClipboardCheck size={14}/>} label="Part A: CC Report" />
+          <TabButton active={activeReport === 'sqd'} onClick={() => setActiveReport('sqd')} icon={<FileBarChart size={14}/>} label="Part B: SQD Analysis" />
+          <TabButton active={activeReport === 'csm-tab'} onClick={() => setActiveReport('csm-tab')} icon={<LayoutDashboard size={14}/>} label="Part C: CSM Tabulation" />
+          <TabButton active={activeReport === 'csm-score'} onClick={() => setActiveReport('csm-score')} icon={<FileText size={14}/>} label="Part D: Score per Service" />
         </div>
       </div>
 
-      {/* 2. THE PRINTABLE SHEET AREA */}
-      <div className="max-w-5xl mx-auto flex justify-center pb-20">
-        {/* Added inline styles to force standard HEX colors and avoid oklch errors */}
+      {/* REPORT CANVAS */}
+      <div className="max-w-5xl mx-auto flex justify-center pb-32">
         <div 
           ref={reportRef} 
-          className="shadow-2xl overflow-hidden"
-          style={{ 
-            backgroundColor: '#ffffff', // Standard Hex White
-            color: '#000000',           // Standard Hex Black
-            display: 'block'            // Ensures clear boundaries for the PDF capture
-          }}
+          id="printable-report"
+          className="shadow-[0_20px_50px_rgba(0,0,0,0.1)] rounded-sm overflow-hidden ring-1 ring-slate-200"
+          style={{ backgroundColor: '#ffffff', color: '#000000', display: 'block' }}
         >
           {activeReport === 'cc' ? (
-            <CCEvaluationTable 
-              reportData={reportData} 
-              office={displayOfficeName} 
-              signatories={signatories} 
-              period={fullPeriodString}
-            />
+            <CCEvaluationTable reportData={reportData} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
           ) : activeReport === 'sqd' ? (
-            <SQDEvaluationTable
-              reportData={reportData}
-              office={displayOfficeName}
-              signatories={signatories}
-              period={fullPeriodString}
-            />
+            <SQDEvaluationTable reportData={reportData} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
           ) : activeReport === 'csm-tab' ? (
-            <CSMTabulationTable
-              reportData={reportData}
-              office={displayOfficeName}
-              signatories={signatories}
-              period={fullPeriodString}
-            />
+            <CSMTabulationTable reportData={reportData} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
+          ) : activeReport === 'csm-score' ? (
+            <ScorePerService services={reportData} user={user} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
           ) : (
-            <div className="p-20 w-[8.5in] text-center italic bg-white border border-dashed text-slate-400">
-              Please select a report type to continue.
+            <div className="p-32 w-[8.5in] text-center italic bg-white text-slate-300 font-medium uppercase tracking-[0.3em]">
+              Select Report Component
             </div>
           )}
         </div>
@@ -260,23 +280,40 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
   );
 };
 
-// --- SUB-COMPONENT ---
+// --- MODERN SUB-COMPONENTS ---
+
+const TabButton = ({ active, onClick, icon, label }) => (
+    <button 
+      onClick={onClick} 
+      className={`flex items-center gap-2.5 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
+        active 
+          ? 'bg-white text-indigo-700 shadow-md translate-y-[-1px]' 
+          : 'text-slate-500 hover:text-indigo-600 hover:bg-white/50'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+);
+
 const SignatoryInput = ({ label, nKey, tKey, vals, update }) => (
-  <div className="space-y-3">
-    <p className="text-[10px] font-black text-indigo-900 uppercase tracking-tighter">{label}</p>
-    <input 
-      type="text" 
-      placeholder="Full Name"
-      className="w-full p-2 text-xs border border-slate-200 rounded outline-none focus:border-indigo-500 font-bold uppercase"
-      value={vals[nKey]}
-      onChange={(e) => update(nKey, e.target.value)}
-    />
-    <input 
-      type="text" 
-      placeholder="Designation / Position"
-      className="w-full p-2 text-[10px] border border-slate-100 rounded outline-none focus:border-indigo-500 text-slate-500"
-      value={vals[tKey]}
-      onChange={(e) => update(tKey, e.target.value)}
-    />
+  <div className="space-y-4 p-6 bg-slate-50 rounded-2xl border border-slate-100 transition-colors focus-within:border-indigo-200">
+    <p className="text-[9px] font-black text-indigo-600 uppercase tracking-[0.2em]">{label}</p>
+    <div className="space-y-2">
+        <input 
+          type="text" 
+          placeholder="ENTER FULL NAME"
+          className="w-full bg-white px-4 py-2.5 text-[11px] border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-black uppercase placeholder:text-slate-300 transition-all"
+          value={vals[nKey]}
+          onChange={(e) => update(nKey, e.target.value)}
+        />
+        <input 
+          type="text" 
+          placeholder="DESIGNATION"
+          className="w-full bg-white px-4 py-2 text-[9px] border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-500 font-bold uppercase placeholder:text-slate-300 transition-all"
+          value={vals[tKey]}
+          onChange={(e) => update(tKey, e.target.value)}
+        />
+    </div>
   </div>
 );

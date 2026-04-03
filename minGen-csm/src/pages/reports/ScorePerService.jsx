@@ -19,7 +19,7 @@ const ScorePerService = ({
   };
 
   /** * MODIFIED FETCHING LOGIC:
-   * 1. Check if we are in 'Global' view or Super Admin - if so, don't filter by office.
+   * 1. Check if we are 'Global' view or Super Admin - if so, don't filter by office.
    * 2. Otherwise, match by office_id or office_name (flexible matching).
    */
   const officeSpecificServices = services.filter(s => {

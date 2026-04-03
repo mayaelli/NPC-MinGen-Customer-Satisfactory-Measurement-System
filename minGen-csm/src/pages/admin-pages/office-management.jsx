@@ -58,6 +58,33 @@ const OfficeManagement = () => {
     }
   };
 
+  const handleToggleAuditor = async (officeId, currentStatus) => {
+  const newStatus = currentStatus == 1 ? 0 : 1;
+
+  try {
+    const response = await fetch(API_URL, { // Use your constant API_URL
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'toggle_auditor',
+        id: officeId,
+        status: newStatus
+      })
+    });
+
+    const result = await response.json();
+    if (result.status === 'success') {
+      // 1. Update the local modal state so the toggle moves immediately
+      setSelectedOffice(prev => ({ ...prev, is_auditor_enabled: newStatus }));
+      
+      // 2. Refresh the background list
+      fetchOffices(); 
+    }
+  } catch (error) {
+    console.error("Error toggling auditor:", error);
+  }
+};
+
   const handleCopy = (office) => {
     const textToCopy = `Plant: ${office.plant_name}\nOffice: ${office.name}\nAbbreviation: ${office.abbreviation}\nUser: ${office.username}\nPass: ${office.raw_password}`;
     navigator.clipboard.writeText(textToCopy);
@@ -235,6 +262,13 @@ const OfficeManagement = () => {
                         <div className={`w-2 h-2 rounded-full ${office.role === 'manager' ? 'bg-indigo-500' : 'bg-slate-300'}`}></div>
                         <span className="text-sm font-bold text-slate-700 uppercase">
                           {office.name} <span className="text-indigo-500 font-black ml-1">({office.abbreviation})</span>
+                        
+                          {office.is_auditor_enabled == 1 && (
+                            <span className="ml-2 px-1.5 py-0.5 bg-indigo-100 text-indigo-600 text-[8px] font-black rounded uppercase tracking-tighter border border-indigo-200">
+                              Auditor
+                            </span>
+                          )}
+                          
                         </span>
                       </div>
                       <button onClick={() => setSelectedOffice(office)} className="text-[9px] font-black text-slate-400 hover:text-indigo-600 border border-slate-200 px-3 py-1.5 rounded-lg bg-white transition-all shadow-sm active:scale-95 uppercase tracking-tighter">
@@ -266,6 +300,26 @@ const OfficeManagement = () => {
             </div>
             
             <div className="p-6 space-y-6">
+
+              <div className="flex items-center justify-between p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Auditor Access</span>
+                    <p className="text-[9px] text-slate-500 font-medium leading-tight">Can view all plant ARTA data</p>
+                  </div>
+                  <button
+                    onClick={() => handleToggleAuditor(selectedOffice.id, selectedOffice.is_auditor_enabled)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 focus:outline-none shadow-inner ${
+                      selectedOffice.is_auditor_enabled == 1 ? 'bg-indigo-600' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 shadow-sm ${
+                        selectedOffice.is_auditor_enabled == 1 ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
               <div className="space-y-4">
                 <div className="flex flex-col gap-1">
                   <label className="text-[9px] font-black text-indigo-500 uppercase tracking-widest ml-1">Username</label>

@@ -1,24 +1,27 @@
 <?php
+session_start();
 require_once '../config/db.php';
 
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, DELETE, PUT, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+// 2. HEADERS
+header("Access-Control-Allow-Origin: http://localhost:5173");
+header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Content-Type: application/json");
 
-$method = $_SERVER['REQUEST_METHOD'];
-
-if ($method === 'OPTIONS') {
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
 
+$method = $_SERVER['REQUEST_METHOD'];
+
 try {
     if ($method === 'GET') {
-        $sql = "SELECT offices.*, users.username, users.raw_password, users.role 
-                FROM offices 
-                LEFT JOIN users ON offices.id = users.office_id 
-                ORDER BY offices.plant_name ASC, offices.parent_id ASC";
+        $sql = "SELECT offices.*, offices.is_auditor_enabled, users.username, users.raw_password, users.role 
+            FROM offices 
+            LEFT JOIN users ON offices.id = users.office_id 
+            ORDER BY offices.plant_name ASC, offices.parent_id ASC";
         $stmt = $conn->query($sql);
         echo json_encode(["status" => "success", "data" => $stmt->fetchAll()]);
     } 
@@ -26,6 +29,23 @@ try {
     elseif ($method === 'POST') {
         $data = json_decode(file_get_contents("php://input"));
         
+        if (isset($data->action) && $data->action === 'toggle_auditor') {
+            if (!empty($data->id)) {
+                // Assuming you added the 'is_auditor_enabled' column to your offices table
+                $stmt = $conn->prepare("UPDATE offices SET is_auditor_enabled = ? WHERE id = ?");
+                $stmt->execute([$data->status, $data->id]);
+                
+                echo json_encode([
+                    "status" => "success", 
+                    "message" => "Auditor status " . ($data->status ? 'Enabled' : 'Disabled')
+                ]);
+                exit(); // Stop here so it doesn't run the Office Creation code below
+            } else {
+                echo json_encode(["status" => "error", "message" => "Office ID required"]);
+                exit();
+            }
+        }
+
         if (!empty($data->name) && !empty($data->plant_name)) {
             try {
                 $conn->beginTransaction();

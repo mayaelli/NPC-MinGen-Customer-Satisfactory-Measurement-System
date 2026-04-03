@@ -4,19 +4,7 @@
  * Project: NAPOCOR MinGen CSM
  */
 
-// 1. CORS Headers: Allows your React app (Vite) to talk to this PHP backend
-header("Access-Control-Allow-Origin: *"); 
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS, DELETE, PUT");
-header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
-header("Content-Type: application/json; charset=UTF-8");
-
-// 2. Handle "Pre-flight" requests (Browsers send an OPTIONS request before the actual POST)
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
-// 3. Database Credentials
+// Database Credentials
 $host = "localhost";
 $db_name = "mingen_csm"; // The name of the database you manually created
 $username = "root";      // Default XAMPP username

@@ -20,23 +20,17 @@ function DashboardPage() {
   useEffect(() => {
     const loadPortalData = async () => {
       try {
-        const [resO, resS] = await Promise.all([
-          fetch(API_OFFICES),
-          fetch(API_SERVICES)
-        ]);
-
+        const [resO, resS] = await Promise.all([fetch(API_OFFICES), fetch(API_SERVICES)]);
         const oData = await resO.json();
         const sData = await resS.json();
 
         if (oData.status === 'success') {
-          // EXCLUDE System Admin from the public portal
-          const filtered = oData.data.filter(off => off.username !== 'admin');
-          setOffices(filtered);
+          setOffices(oData.data.filter(off => off.username !== 'admin'));
         }
         
         if (sData.status === 'success') {
           const grouped = sData.data.reduce((acc, service) => {
-            const oid = service.office_id;
+            const oid = service.office_id.toString();
             if (!acc[oid]) acc[oid] = [];
             acc[oid].push(service);
             return acc;
@@ -52,13 +46,11 @@ function DashboardPage() {
     loadPortalData();
   }, []);
 
-  // GROUP OFFICES BY PLANT
   const groupedOffices = useMemo(() => {
     const filtered = offices.filter(off => 
       off.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       off.plant_name.toLowerCase().includes(searchTerm.toLowerCase())
     );
-
     return filtered.reduce((acc, off) => {
       if (!acc[off.plant_name]) acc[off.plant_name] = [];
       acc[off.plant_name].push(off);
@@ -67,137 +59,154 @@ function DashboardPage() {
   }, [searchTerm, offices]);
 
   const handleSurveySubmit = async (formData) => {
-    const payload = {
-      ...formData,
-      office_id: selectedOffice.id,
-      service_id: selectedServiceId
-    };
-
+    const payload = { ...formData, office_id: selectedOffice.id, service_id: selectedServiceId };
     try {
       const response = await fetch('http://localhost/MinGen%20CSM/mingen-api/survey/submit_survey.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
-      const result = await response.json();
-      if (result.status === 'success') {
-        alert("Official Feedback Submitted. Thank you!");
-        navigate('/');
-      }
+      if ((await response.json()).status === 'success') navigate('/');
     } catch (error) {
-      alert("Submission Error. Check connection.");
+      alert("Submission Error.");
     }
   };
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-bold text-slate-400">LOADING PORTAL...</div>;
+  if (isLoading) return <div className="h-screen flex items-center justify-center bg-white text-[10px] font-bold tracking-widest text-slate-400 animate-pulse uppercase">Syncing with NPC Servers...</div>;
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] font-sans flex flex-col text-slate-900">
-      <nav className="bg-[#002855] text-white px-8 py-4 flex justify-between items-center shadow-md">
-        <div className="flex items-center gap-3">
-          <img src="/npc-logo.jpg" alt="NPC" className="h-10 w-10 bg-white rounded-full p-1" />
-          <div className="text-left">
-            <h1 className="text-sm font-bold leading-none uppercase tracking-tighter">National Power Corporation</h1>
-            <p className="text-[9px] text-blue-300 uppercase tracking-widest mt-1">CSM FEEDBACK PORTAL</p>
+    <div className="h-screen flex flex-col bg-[#f8fafc] font-sans text-slate-900 overflow-hidden">
+      {/* 1. Refined Minimal Header */}
+      <header className="flex-none bg-white/70 backdrop-blur-md px-10 py-5">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-5">
+            <img src="/npc-logo.png" alt="NPC" className="h-9 w-9 object-contain opacity-90" />
+            <div className="space-y-0.5">
+              <h1 className="text-[#002855] text-xs font-black tracking-widest uppercase">National Power Corporation</h1>
+              <p className="text-[9px] font-bold text-slate-400 tracking-wider uppercase">Mindanao Generation Portal</p>
+            </div>
           </div>
+          <button 
+            onClick={() => navigate('/')} 
+            className="text-[10px] font-bold text-slate-400 hover:text-slate-900 transition-colors uppercase tracking-widest"
+          >
+            Exit Portal
+          </button>
         </div>
-        <button onClick={() => navigate('/')} className="text-[10px] font-bold border border-blue-400/50 px-4 py-2 rounded-sm hover:bg-white/10 transition uppercase">Exit</button>
-      </nav>
+      </header>
 
-      <main className="flex-1 py-10 px-6">
-        {step === 1 && (
-          <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="text-center">
-              <h2 className="text-3xl font-black text-[#002855] uppercase tracking-tight">Select your Location</h2>
-              <p className="text-slate-500 font-medium">Which plant or office did you visit today?</p>
-            </div>
+      {/* 2. Content Area */}
+      <main className="flex-1 flex flex-col items-center justify-center px-4 md:px-10">
+        <div className={`w-full transition-all duration-500 ${step === 3 ? 'max-w-4xl' : 'max-w-2xl'}`}>
+          
+          {/* Progress (Visual, not uptight) */}
+          <div className="flex justify-center gap-2 mb-10">
+            {[1, 2, 3].map(i => (
+              <div key={i} className={`h-1 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-[#002855]' : 'w-2 bg-slate-200'}`} />
+            ))}
+          </div>
 
-            <div className="max-w-xl mx-auto">
-              <input
-                type="text"
-                placeholder="SEARCH PLANT OR OFFICE..."
-                className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-xl focus:border-indigo-600 outline-none transition-all text-lg font-bold shadow-sm uppercase placeholder:text-slate-300"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
+          {step === 1 && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-700">
+              <div className="text-center space-y-2">
+                <h2 className="text-2xl font-light text-slate-800 tracking-tight">Select <span className="font-bold text-[#002855]">Location</span></h2>
+                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">Step 01 / Primary Office Identification</p>
+              </div>
 
-            <div className="space-y-10">
-              {Object.entries(groupedOffices).map(([plant, plantOffices]) => (
-                <div key={plant} className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-2 w-2 bg-indigo-600 rounded-full"></div>
-                    <h3 className="text-sm font-black text-slate-400 uppercase tracking-[0.3em]">{plant}</h3>
-                    <div className="h-px flex-1 bg-slate-200"></div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {plantOffices.map((office) => (
-                      <button
-                        key={office.id}
-                        onClick={() => { setSelectedOffice(office); setStep(2); }}
-                        className="bg-white p-5 border border-slate-200 rounded-xl text-left hover:border-indigo-600 hover:shadow-md transition-all group flex flex-col justify-between min-h-[100px]"
-                      >
-                        <span className="font-bold text-slate-800 uppercase text-sm leading-tight group-hover:text-indigo-600">{office.name}</span>
-                        <div className="flex justify-between items-center mt-4">
-                          <span className="text-[10px] font-bold text-slate-400">{office.code}</span>
-                          <span className="text-[10px] font-black text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity uppercase">Select →</span>
-                        </div>
-                      </button>
+              <div className="space-y-3">
+                <div className="relative group">
+                  <select
+                    className="w-full appearance-none bg-white border border-slate-200 px-6 py-5 text-sm font-medium text-slate-700 focus:border-[#002855] focus:ring-0 outline-none transition-all cursor-pointer shadow-sm"
+                    value={selectedOffice?.id || ""}
+                    onChange={(e) => setSelectedOffice(offices.find(o => o.id.toString() === e.target.value))}
+                  >
+                    <option value="" disabled>— Select Filing Location —</option>
+                    {Object.entries(groupedOffices).map(([plant, plantOffices]) => (
+                      <optgroup key={plant} label={plant.toUpperCase()}>
+                        {plantOffices.map((office) => (
+                          <option key={office.id} value={office.id}>{office.name}</option>
+                        ))}
+                      </optgroup>
                     ))}
+                  </select>
+                  <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-            <div className="bg-white p-6 border-l-8 border-indigo-600 rounded-lg shadow-sm flex justify-between items-center">
-              <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">TRANSACTING WITH</p>
-                <h3 className="text-xl font-black text-[#002855] uppercase leading-none mt-1">{selectedOffice?.name}</h3>
-                <p className="text-xs font-bold text-indigo-500 mt-1">{selectedOffice?.plant_name}</p>
-              </div>
-              <button onClick={() => setStep(1)} className="text-[10px] font-bold bg-slate-100 text-slate-600 px-4 py-2 rounded-full hover:bg-slate-200 uppercase tracking-tighter">Change</button>
-            </div>
-
-            <div className="text-center">
-              <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Select ARTA Service</h2>
-              <p className="text-slate-500 text-sm">Please pick the specific service you availed.</p>
-            </div>
-
-            <div className="grid gap-3">
-              {servicesByOffice[selectedOffice?.id]?.map((svc, idx) => (
-                <button
-                  key={svc.id}
-                  onClick={() => { 
-                    setSelectedService(svc.service_name); 
-                    setSelectedServiceId(svc.id);       
-                    setStep(3); 
-                  }}
-                  className="p-6 bg-white border-2 border-slate-100 rounded-2xl hover:border-indigo-600 hover:bg-indigo-50/50 transition-all text-left flex gap-5 items-center active:scale-[0.98]"
+                <button 
+                  disabled={!selectedOffice}
+                  onClick={() => setStep(2)}
+                  className="w-full py-5 bg-[#002855] text-white text-[10px] font-bold uppercase tracking-[0.3em] disabled:bg-slate-100 disabled:text-slate-300 transition-all hover:bg-[#001d3d] shadow-lg shadow-blue-900/5"
                 >
-                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-black text-slate-400 text-xs">{idx + 1}</div>
-                  <span className="flex-1 font-bold text-slate-700 uppercase text-sm leading-snug">{svc.service_name}</span>
-                  <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7" /></svg>
+                  Continue
                 </button>
-              ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {step === 3 && (
-          <SurveyForm 
-            selectedService={selectedService} 
-            artaServicesForOffice={servicesByOffice[selectedOffice.id]}
-            onBack={() => setStep(2)} 
-            onSubmit={handleSurveySubmit} 
-          />
-        )}
+          {step === 2 && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-right-2 duration-700">
+              <div className="text-center space-y-2">
+                <h2 className="text-2xl font-light text-slate-800 tracking-tight">Specify <span className="font-bold text-[#002855]">Service</span></h2>
+                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">{selectedOffice?.name}</p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="relative">
+                  <select
+                    className="w-full appearance-none bg-white border border-slate-200 px-6 py-5 text-sm font-medium text-slate-700 focus:border-[#002855] outline-none transition-all cursor-pointer shadow-sm"
+                    value={selectedServiceId || ""}
+                    onChange={(e) => {
+                      const svc = servicesByOffice[selectedOffice.id.toString()]?.find(s => s.id.toString() === e.target.value);
+                      if (svc) { setSelectedService(svc.service_name); setSelectedServiceId(svc.id); }
+                    }}
+                  >
+                    <option value="" disabled>— Select Service Type —</option>
+                    {servicesByOffice[selectedOffice?.id.toString()]?.map((svc) => (
+                      <option key={svc.id} value={svc.id}>{svc.service_name}</option>
+                    ))}
+                  </select>
+                  <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button onClick={() => setStep(1)} className="py-4 border border-slate-200 text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:bg-slate-50 transition-all">Back</button>
+                  <button 
+                    disabled={!selectedServiceId}
+                    onClick={() => setStep(3)}
+                    className="py-4 bg-[#002855] text-white text-[10px] font-bold uppercase tracking-[0.3em] disabled:bg-slate-100 disabled:text-slate-300 transition-all shadow-lg shadow-blue-900/5"
+                  >
+                    Proceed
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="animate-in fade-in zoom-in-95 duration-700 flex flex-col" style={{ maxHeight: 'calc(100vh - 130px)' }}>
+              <div className="overflow-y-auto custom-scrollbar">
+                <SurveyForm
+                  selectedService={selectedService}
+                  selectedOfficeName={selectedOffice?.name}
+                  artaServicesForOffice={servicesByOffice[selectedOffice.id.toString()]}
+                  onBack={() => setStep(2)}
+                  onSubmit={handleSurveySubmit}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </main>
+
+      {/* 3. Footer */}
+      <footer className="flex-none px-10 py-6 border-t border-slate-100">
+        <div className="max-w-7xl mx-auto flex justify-between items-center opacity-40">
+          <span className="text-[9px] font-bold tracking-widest uppercase">RA 11032 Compliant Portal</span>
+          <span className="text-[9px] font-bold tracking-widest uppercase">© 2026 NPC MINGEN</span>
+        </div>
+      </footer>
     </div>
   );
 }

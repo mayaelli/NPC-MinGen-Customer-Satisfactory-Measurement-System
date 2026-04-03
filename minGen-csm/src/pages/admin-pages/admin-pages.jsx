@@ -7,81 +7,79 @@ import SurveyResults from './survey-results';
 import { ReportsPage } from './reports-page';
 
 const AdminPage = () => {
-  console.log("1. AdminPage Component Initialized"); // LOG 1
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [user, setUser] = useState(null);
-  
-  // --- DATA STATES ---
   const [surveys, setSurveys] = useState([]); 
   const [loading, setLoading] = useState(true);
 
+  // Logic remains untouched as requested
   useEffect(() => {
-    console.log("2. useEffect Triggered"); // LOG 2
     const savedUser = localStorage.getItem('user');
     if (!savedUser) {
-      console.log("3. No user found in localStorage, redirecting..."); // LOG 3
       navigate('/login'); 
     } else {
-      console.log("4. User found:", savedUser); // LOG 4
       setUser(JSON.parse(savedUser));
       fetchSurveyData();
     }
   }, [navigate]);
 
-  // --- FETCH LOGIC FOR PHP API ---
   const fetchSurveyData = async () => {
-    console.log("5. fetchSurveyData Started"); // LOG 5
     try {
       setLoading(true);
-      // CORRECTED URL TO MATCH YOUR FILENAME AND FOLDER
-      // Replace line 36 in your AdminPage.jsx with this:
-      // update line 39 in AdminPage.jsx
-      const response = await fetch('http://localhost/MinGen%20CSM/minGen-api/survey/get_survey_results.php');
-      console.log("6. Fetch Response Status:", response.status); // LOG 6
-      
+      const response = await fetch('http://localhost/MinGen%20CSM/minGen-api/survey/get_survey_results.php', {
+        credentials: 'include',
+      });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
       const result = await response.json();
-      console.log("7. Data Received from PHP:", result); // LOG 7
-
       if (result.status === "success") {
-        console.table(result.data); // <--- ADD THIS to see the 9 records in the console
         setSurveys(result.data); 
-      } else {
-        console.error("PHP Error:", result.message);
       }
     } catch (error) {
-      console.log("FETCH ERROR:", error); // LOG ERROR
       console.error("Connection Error:", error);
     } finally {
       setLoading(false);
-      console.log("8. Loading Finished"); // LOG 8
     }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('user');
-    navigate('/login');
+    // Use a confirmation to prevent accidental clicks
+    const confirmLogout = window.confirm(
+      "SECURITY PROTOCOL: Are you sure you want to terminate this active session? \n\nAny unsaved changes will be lost."
+    );
+
+    if (confirmLogout) {
+      // 1. Clear session data
+      localStorage.removeItem('user');
+      
+      // 2. Optional: Add a small delay for "Processing" effect
+      console.log("Session Terminated. Redirecting to Secure Login...");
+      
+      // 3. Navigate back
+      navigate('/login');
+    }
   };
 
-  // --- TAB ROUTING ---
   const renderContent = () => {
     if (loading) {
       return (
-        <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
-          <p className="text-xs font-bold uppercase tracking-widest">Synchronizing Database...</p>
+        <div className="flex flex-col items-center justify-center h-[60vh] animate-in fade-in duration-700">
+          <div className="relative w-12 h-12">
+             <div className="absolute inset-0 border-4 border-blue-500/10 rounded-full"></div>
+             <div className="absolute inset-0 border-4 border-t-blue-600 rounded-full animate-spin"></div>
+          </div>
+          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 mt-6">Decrypting Records...</p>
         </div>
       );
     }
 
     switch(activeTab) {
       case 'overview': return <AdminDashboard data={surveys} />;
-      case 'office_management': return <OfficeManagement />;
+      case 'office_management': 
+        return user.role === 'super_admin' ? <OfficeManagement /> : <AdminDashboard data={surveys} />; 
       case 'services': return <ArtaServices />;
       case 'results': return <SurveyResults data={surveys} />;
-      case 'reports': return <ReportsPage data={surveys} />; 
+      case 'reports': return <ReportsPage data={surveys} user={user} />;
       default: return <AdminDashboard data={surveys} />;
     }
   };
@@ -89,69 +87,131 @@ const AdminPage = () => {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9] flex font-sans text-slate-900">
-      <aside className="w-64 bg-[#001d3d] text-white flex flex-col h-screen sticky top-0 z-20">
-        <div className="p-6 border-b border-white/10 bg-[#00152e]">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-600 flex items-center justify-center rounded-sm shadow-inner text-white font-black">N</div>
-            <div>
-              <h1 className="font-bold text-sm tracking-tight leading-none text-white">NAPOCOR</h1>
-              <p className="text-[9px] text-blue-400 font-bold tracking-widest uppercase mt-1">MinGen Division</p>
+    <div className="h-screen flex bg-[#f8fafc] font-sans text-slate-900 overflow-hidden">
+      
+      {/* SIDEBAR: Command Panel Style */}
+      <aside className="w-72 bg-[#001d3d] text-white flex flex-col relative z-20 shadow-[4px_0_24px_rgba(0,0,0,0.1)]">
+        {/* Sidebar Header */}
+        <div className="p-8 pb-10">
+          <div className="flex flex-col gap-4">
+            <img src="/npc-logo.png" alt="NPC" className="h-12 w-12 object-contain brightness-0 invert opacity-90" />
+            <div className="space-y-1">
+              <h1 className="font-black text-lg tracking-tighter leading-none uppercase italic">Mindanao Gen</h1>
+              <p className="text-[9px] text-blue-400 font-black tracking-[0.3em] uppercase">Control Center v2.0</p>
             </div>
           </div>
         </div>
         
-        <nav className="flex-1 p-4 space-y-1">
-          <p className="px-4 py-2 text-[10px] font-bold text-blue-400/50 uppercase tracking-[0.2em]">Main Menu</p>
+        {/* Navigation */}
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
+          <p className="px-4 py-3 text-[9px] font-black text-white/20 uppercase tracking-[0.4em]">System Nodes</p>
           {[
-            { id: 'overview', label: 'Dashboard' },
-            { id: 'office_management', label: 'Office Management' },
-            { id: 'services', label: 'Services (ARTA)' },
-            { id: 'results', label: 'Feedbacks' },
-            { id: 'reports', label: 'Compliance Reports'},
+            { id: 'overview', label: 'Dashboard Overview', icon: '📊' },
+            ...(user.role === 'super_admin' ? [{ id: 'office_management', label: 'Office Directory', icon: '🏢' }] : []),
+            { id: 'services', label: 'ARTA Services', icon: '📋' },
+            { id: 'results', label: 'Feedback Stream', icon: '💬' },
+            { id: 'reports', label: 'Compliance Audit', icon: '🛡️' },
           ].map((item) => (
             <button 
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center px-4 py-3 rounded-sm text-xs font-bold transition-all duration-150 ${
+              className={`w-full group flex items-center justify-between px-4 py-4 transition-all duration-300 relative ${
                 activeTab === item.id 
-                  ? 'bg-blue-600 text-white shadow-md' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                  ? 'bg-blue-600/10 text-white' 
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
             >
-              {item.label}
+              <div className="flex items-center gap-3">
+                <span className="text-sm opacity-70 group-hover:scale-110 transition-transform">{item.icon}</span>
+                <span className="text-[11px] font-bold uppercase tracking-widest">{item.label}</span>
+              </div>
+              {activeTab === item.id && (
+                <div className="absolute left-0 w-1 h-full bg-blue-500 shadow-[0_0_12px_#3b82f6]"></div>
+              )}
             </button>
           ))}
         </nav>
 
-        <div className="p-4 border-t border-white/10 bg-[#00152e]">
-          <button onClick={handleLogout} className="w-full px-4 py-2 border border-red-500/30 text-red-400 text-[10px] font-bold rounded-sm hover:bg-red-500 hover:text-white transition-all uppercase tracking-widest">
-            Log Out Session
+        {/* User Profile Footer */}
+        <div className="p-6 bg-[#00152e] border-t border-white/5 space-y-4">
+          <div className="flex items-center gap-3 px-2">
+            <div className="h-8 w-8 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30 text-[10px] font-black text-blue-400">
+              {user.username.charAt(0).toUpperCase()}
+            </div>
+            <div className="overflow-hidden">
+              {/* 1. Added Department/Office Name here */}
+              <p className="text-[10px] font-black text-white truncate uppercase tracking-tight">
+                {user.office_name || "Mingen Division"} 
+              </p>
+              
+              {/* 2. Added User/Role Info */}
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <p className="text-[8px] font-bold text-blue-400/60 uppercase tracking-tighter italic">
+                  @{user.username}
+                </p>
+                <span className="text-[8px] text-white/20">•</span>
+                <p className="text-[8px] font-black text-indigo-400 uppercase tracking-tighter">
+                  {user.role}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <button 
+            onClick={handleLogout} 
+            className="w-full py-3 bg-white/5 hover:bg-red-600/20 text-white/40 hover:text-red-400 text-[9px] font-black rounded-none transition-all uppercase tracking-[0.2em] border border-white/5 hover:border-red-500/30"
+          >
+            Terminate Session
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col h-screen overflow-y-auto">
-        <header className="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center sticky top-0 z-10">
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-blue-600 rounded-full"></span>
-            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em]">
-              {activeTab.replace('_', ' ')}
-            </h2>
+      {/* MAIN VIEWPORT */}
+      <main className="flex-1 flex flex-col relative h-screen overflow-hidden">
+        
+        {/* Minimal Header */}
+        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 px-10 flex justify-between items-center z-10 shrink-0">
+          <div className="flex items-center gap-6">
+            <div className="flex flex-col">
+              <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.5em] leading-none mb-1">Current Node</h2>
+              <p className="text-xl font-black text-slate-800 uppercase tracking-tighter italic">
+                {activeTab.replace('_', ' ')}
+              </p>
+            </div>
+            {/* Real-time Indicator */}
+            <div className="h-8 w-px bg-slate-200 hidden md:block"></div>
+            <div className="hidden md:flex flex-col">
+               <span className="text-[9px] font-bold text-emerald-500 uppercase flex items-center gap-2 tracking-widest">
+                 <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                 Live Data Stream
+               </span>
+               <span className="text-[10px] font-medium text-slate-400">Response Latency: 24ms</span>
+            </div>
           </div>
           
-          <div className="flex items-center gap-4">
-            <div className="text-right border-r border-slate-200 pr-4">
-              <p className="text-[10px] font-bold text-slate-400 uppercase leading-none tracking-tighter">Server Status</p>
-              <p className="text-[9px] font-bold text-emerald-600 uppercase mt-1 tracking-widest">● Operational</p>
-            </div>
-            <p className="text-[10px] font-bold text-slate-800 uppercase tracking-tighter">Terminal 01</p>
+          <div className="flex items-center gap-8">
+             <div className="text-right">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Office Context</p>
+                <p className="text-[11px] font-bold text-slate-800 uppercase">{user.plant_name || 'General HQ'}</p>
+             </div>
+             <div className="h-10 w-10 border border-slate-200 flex items-center justify-center text-xs text-slate-400 font-bold italic shadow-sm">
+                01
+             </div>
           </div>
         </header>
 
-        <div className="p-8 max-w-7xl">
-          {renderContent()}
+        {/* Content Container */}
+        <div className="flex-1 overflow-y-auto px-10 py-10 custom-scrollbar scroll-smooth">
+          <div className="max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-4 duration-1000">
+            {renderContent()}
+          </div>
         </div>
+
+        {/* Status Bar Footer */}
+        <footer className="h-10 bg-white border-t border-slate-200 px-10 flex items-center justify-between shrink-0">
+           <p className="text-[8px] font-black text-slate-300 uppercase tracking-[0.3em]">Authorized Access Only // RA 10173 Security Protocol Active</p>
+           <p className="text-[8px] font-black text-slate-300 uppercase tracking-[0.3em]">NPC MinGen Division © 2026</p>
+        </footer>
       </main>
     </div>
   );

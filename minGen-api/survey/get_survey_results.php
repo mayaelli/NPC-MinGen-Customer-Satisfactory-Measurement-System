@@ -1,12 +1,11 @@
 <?php
-
+session_start();
 ob_clean();
-// 1. ADD THESE CORS HEADERS AT THE VERY TOP (Crucial!)
 header("Access-Control-Allow-Origin: http://localhost:5173");
+header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, DELETE, PUT");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-// 2. Handle the 'Preflight' request from the browser
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit;
@@ -15,23 +14,56 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 require_once '../config/db.php';
 header("Content-Type: application/json");
 
+// Roles: super_admin = "God Mode" | auditor = "Global View" | manager = Plant-level | office = Unit-level
+$userRole   = $_SESSION['role']      ?? 'office';
+$userOffice = $_SESSION['office_id'] ?? null;
+$userPlant  = $_SESSION['plant_name'] ?? '';
+
 try {
-    // 1. Fetch the main submission data
+    // 1. BASE SQL
     $sql = "SELECT 
                 s.*, 
                 o.name as office_name, 
                 o.plant_name,
-                asvc.service_name,
-                (SELECT AVG(rating) FROM survey_responses WHERE submission_id = s.id AND question_code LIKE 'SQD%') as avg_rating
+                asvc.service_name
             FROM submissions s
             JOIN offices o ON s.office_id = o.id
-            JOIN arta_services asvc ON s.service_id = asvc.id
-            ORDER BY s.created_at DESC";
-            
-    $stmt = $conn->query($sql);
+            JOIN arta_services asvc ON s.service_id = asvc.id";
+
+    $whereClauses = [];
+    $params = [];
+
+    // --- 2. RBAC FILTERING LOGIC ---
+    if ($userRole === 'super_admin') {
+        // "God Mode" — full access to all data, no filters
+    }
+    elseif ($userRole === 'auditor') {
+        // "Global View" — read-only, sees all data across all plants
+    }
+    elseif ($userRole === 'manager') {
+        // Plant-level — filtered to their plant only
+        $whereClauses[] = "o.plant_name = ?";
+        $params[] = $userPlant;
+    }
+    elseif ($userRole === 'office') {
+        // Unit-level — filtered to their specific office only
+        $whereClauses[] = "s.office_id = ?";
+        $params[] = $userOffice;
+    }
+
+    // Append filters if they exist
+    if (!empty($whereClauses)) {
+        $sql .= " WHERE " . implode(" AND ", $whereClauses);
+    }
+
+    $sql .= " ORDER BY s.created_at DESC";
+
+    // Prepare and execute the main query
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
     $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // 2. For each submission, fetch its specific ratings (CC1, SQD0, etc.)
+    // 3. FETCH RATINGS (Keep your existing pivot logic)
     foreach ($submissions as &$s) {
         $subId = $s['id'];
         $ratingSql = "SELECT question_code, rating FROM survey_responses WHERE submission_id = ?";
@@ -39,18 +71,16 @@ try {
         $ratingStmt->execute([$subId]);
         $ratings = $ratingStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // 3. PIVOT: Convert rows into object properties
-        // This turns a row like {question_code: 'CC1', rating: 1} into $s['CC1'] = 1
         foreach ($ratings as $r) {
             $key = $r['question_code']; 
             $s[$key] = $r['rating'];
-            
-            // Optional: Support both 'CC1' and 'cc1_val' for your JS logic
             $s[strtolower($key) . '_val'] = $r['rating'];
         }
     }
 
     echo json_encode(["status" => "success", "data" => $submissions]);
+
 } catch (Exception $e) {
+    http_response_code(500);
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }

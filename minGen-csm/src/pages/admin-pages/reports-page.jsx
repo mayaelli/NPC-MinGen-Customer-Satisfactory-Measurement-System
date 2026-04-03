@@ -5,9 +5,14 @@ import CCEvaluationTable from '../reports/CCEvaluationTable';
 import SQDEvaluationTable from '../reports/SQDEvaluationTable';
 import CSMTabulationTable from '../reports/CSMTabulationTable';
 
-export const ReportsPage = ({ data = [] }) => {
+export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'ISTD', plant_id: 'OMD'} }) => {
+
+  const isGlobalView = ['super_admin', 'auditor'].includes(user.role);
+  const isManager = user.role === 'manager';
+  const isOffice = user.role === 'office';
+
   const [activeReport, setActiveReport] = useState('cc');
-  const [targetOffice, setTargetOffice] = useState('All');
+  const [targetOffice, setTargetOffice] = useState(isGlobalView ? 'All' : user.office_name);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const reportRef = useRef();
 
@@ -77,16 +82,31 @@ export const ReportsPage = ({ data = [] }) => {
   // --- DATA FILTERING ---
   const reportData = useMemo(() => {
     if (!data || data.length === 0) return [];
-    return targetOffice === 'All' 
-      ? data 
-      : data.filter(d => d.office_name?.toString().toUpperCase() === targetOffice.toUpperCase());
-  }, [data, targetOffice]);
+    
+    // 1. If Auditor/Admin and 'All' is selected
+    if (isGlobalView && targetOffice === 'All') return data;
+    
+    // 2. Otherwise filter by the selected targetOffice
+    return data.filter(d => d.office_name?.toString().toUpperCase() === targetOffice.toUpperCase());
+  }, [data, targetOffice, isGlobalView]);
 
   const offices = useMemo(() => {
-    const unique = [...new Set(data.map(d => d.office_name?.toUpperCase()))]
-      .filter(Boolean).sort();
-    return ['All', ...unique];
-  }, [data]);
+    let list = [];
+    if (isGlobalView) {
+      // Auditors see everything
+      const unique = [...new Set(data.map(d => d.office_name?.toUpperCase()))].filter(Boolean).sort();
+      list = ['All', ...unique];
+    } else if (isManager) {
+      // Managers only see offices in their plant
+      const deptOffices = data.filter(d => d.plant_name === user.plant_name);
+      const unique = [...new Set(deptOffices.map(d => d.office_name?.toUpperCase()))].filter(Boolean).sort();
+      list = unique;
+    } else {
+      // Regular office only sees themselves
+      list = [user.office_name.toUpperCase()];
+    }
+    return list;
+  }, [data, user]);
 
   // Determine the office display name for the child component
   const displayOfficeName = targetOffice === 'All' ? 'NPC Mindanao Generation' : targetOffice;
@@ -100,21 +120,24 @@ export const ReportsPage = ({ data = [] }) => {
           <div>
             <h1 className="text-2xl font-black text-[#002855] uppercase tracking-tight">Compliance Center</h1>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">
-                RAW DATA: {data.length} | FILTERED: {reportData.length}
+                ROLE: {user.role} | RAW DATA: {data.length} | FILTERED: {reportData.length}
             </p>
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
-              <span className="text-[10px] font-black text-slate-400 uppercase pl-2">Filter Office:</span>
-              <select 
-                value={targetOffice}
-                onChange={(e) => setTargetOffice(e.target.value)}
-                className="text-xs font-bold text-indigo-600 bg-transparent outline-none pr-4 cursor-pointer uppercase"
-              >
-                {offices.map(off => <option key={off} value={off}>{off}</option>)}
-              </select>
-            </div>
+            {/* RBAC: Hide dropdown if it's just a single office user */}
+            {!isOffice && (
+              <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                <span className="text-[10px] font-black text-slate-400 uppercase pl-2">Scope:</span>
+                <select 
+                  value={targetOffice}
+                  onChange={(e) => setTargetOffice(e.target.value)}
+                  className="text-xs font-bold text-indigo-600 bg-transparent outline-none pr-4 cursor-pointer uppercase"
+                >
+                  {offices.map(off => <option key={off} value={off}>{off}</option>)}
+                </select>
+              </div>
+            )}
 
             <button 
               onClick={handleDownloadPDF}

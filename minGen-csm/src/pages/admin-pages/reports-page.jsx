@@ -266,7 +266,7 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
           ) : activeReport === 'sqd' ? (
             <SQDEvaluationTable reportData={reportData} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
           ) : activeReport === 'csm-tab' ? (
-            <CSMTabulationTable reportData={reportData} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
+            <CSMTabulationTable services={reportData} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
           ) : activeReport === 'csm-score' ? (
             <ScorePerService services={reportData} user={user} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
           ) : (

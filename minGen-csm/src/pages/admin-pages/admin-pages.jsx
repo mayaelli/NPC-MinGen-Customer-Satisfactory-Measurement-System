@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Building2, ClipboardList, MessageSquare, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Building2, ClipboardList, MessageSquare, ShieldCheck, UserCog } from 'lucide-react';
 import AdminDashboard from './admin-dashboard'; 
 import OfficeManagement from './office-management';
 import ArtaServices from './arta-services';
 import SurveyResults from './survey-results';
 import { ReportsPage } from './reports-page';
+import AdminManagement from './admin-management';
 
 const AdminPage = () => {
   const navigate = useNavigate();
@@ -48,7 +49,8 @@ const AdminPage = () => {
     office_management: Building2,
     services: ClipboardList,
     results: MessageSquare,
-    reports: ShieldCheck
+    reports: ShieldCheck,
+    admin_management: UserCog,
   };
 
   const handleLogout = () => {
@@ -82,16 +84,41 @@ const AdminPage = () => {
       );
     }
 
-    switch(activeTab) {
-      case 'overview': return <AdminDashboard data={surveys} user={user} />;
-      case 'office_management': 
-        return user.role === 'super_admin' ? <OfficeManagement /> : <AdminDashboard data={surveys} />; 
-      case 'services': return <ArtaServices />;
-      case 'results': return <SurveyResults data={surveys} />;
-      case 'reports': return <ReportsPage data={surveys} user={user} />;
-      default: return <AdminDashboard data={surveys} user={user} />;
-    }
-  };
+      
+        switch(activeTab) {
+        case 'overview': 
+          // Everyone sees this
+          return <AdminDashboard data={surveys} user={user} />;
+
+        case 'office_management': 
+          // STRICT: ADMIN & SUPER_ADMIN ONLY
+          if (user.role === 'admin' || user.role === 'super_admin') {
+            return <OfficeManagement user={user} />;
+          }
+          return <AdminDashboard data={surveys} user={user} />;
+
+        case 'services': 
+          // STRICT: ADMIN, SUPER_ADMIN, OFFICE, MANAGER
+          const allowedServiceRoles = ['admin', 'super_admin', 'office', 'manager'];
+          if (allowedServiceRoles.includes(user.role)) {
+            return <ArtaServices />;
+          }
+          return <AdminDashboard data={surveys} user={user} />;
+
+        case 'admin_management': 
+          // STRICT: SUPER_ADMIN ONLY
+          if (user.role === 'super_admin') {
+            return <AdminManagement />;
+          }
+          return <AdminDashboard data={surveys} user={user} />;
+
+        case 'results': return <SurveyResults data={surveys} />;
+        case 'reports': return <ReportsPage data={surveys} user={user} />;
+
+        default: 
+          return <AdminDashboard data={surveys} user={user} />;
+      }
+    };
 
   if (!user) return null;
 
@@ -116,10 +143,11 @@ const AdminPage = () => {
           <p className="px-4 py-3 text-[9px] font-black text-white/20 uppercase tracking-[0.4em]">System Nodes</p>
           {[
             { id: 'overview', label: 'Dashboard Overview'},
-            ...(user.role === 'super_admin' ? [{ id: 'office_management', label: 'Office Directory' }] : []),
-            { id: 'services', label: 'ARTA Services' },
+            ...(['admin', 'super_admin'].includes(user.role) ? [{ id: 'office_management', label: 'Office Directory' }] : []),
+            ...(['admin', 'super_admin', 'office', 'manager'].includes(user.role) ? [{ id: 'services', label: 'ARTA Services' }] : []),
             { id: 'results', label: 'Feedback Stream' },
             { id: 'reports', label: 'Compliance Audit'},
+            ...(user.role === 'super_admin' ? [{ id: 'admin_management', label: 'Admin Accounts' }] : []),
           ].map((item) => {
             const DynamicIcon = IconMap[item.id];
             return (

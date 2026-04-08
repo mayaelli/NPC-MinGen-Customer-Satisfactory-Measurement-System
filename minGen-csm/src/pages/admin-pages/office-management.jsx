@@ -5,10 +5,12 @@ const OfficeManagement = () => {
   const [offices, setOffices] = useState([]);
   const [newOffice, setNewOffice] = useState({ name: '', abbreviation: '', plant_name: '', description: '', parent_id: '' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [expandedPlants, setExpandedPlants] = useState({});
   const [selectedOffice, setSelectedOffice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [copyStatus, setCopyStatus] = useState(null);
+
 
   const API_URL = 'http://localhost/MinGen%20CSM/mingen-api/survey/manage_offices.php';
 
@@ -152,6 +154,18 @@ const OfficeManagement = () => {
     }
   }, [searchTerm]);
 
+  const handleSelectOffice = (office) => {
+    setSearchTerm(office.name);
+    setIsSearching(false);
+
+    setExpandedPlants(prev => ({
+      ...prev,
+      [office.plant_name]: true
+    }));
+
+    setSelectedOffice(office);
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-10 antialiased text-slate-800 animate-in fade-in duration-700">
       
@@ -175,9 +189,43 @@ const OfficeManagement = () => {
             placeholder="FILTER SYSTEM NODES..." 
             className="w-full pl-10 pr-4 py-3 bg-slate-100 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest focus:bg-white focus:border-blue-600 outline-none transition-all shadow-inner"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setIsSearching(true);
+            }}
+            onFocus={() => setIsSearching(true)}
           />
+
+          {/* FLOATING SUGGESTIONS TERMINAL */}
+          {isSearching && searchTerm.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 max-h-64 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200 ring-1 ring-slate-200">
+              <div className="p-2 border-b border-slate-50 bg-slate-50/50">
+                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-2">Query Results</span>
+              </div>
+              
+              {filteredOffices.length > 0 ? (
+                filteredOffices.map((off) => (
+                  <button
+                    key={off.id}
+                    onClick={() => handleSelectOffice(off)}
+                    className="w-full text-left p-3 hover:bg-blue-50 border-b border-slate-50 last:border-0 transition-all flex justify-between items-center group/item"
+                  >
+                    <div>
+                      <p className="text-[10px] font-black text-slate-800 uppercase group-hover/item:text-blue-600 transition-colors">{off.name}</p>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">{off.plant_name} — {off.abbreviation}</p>
+                    </div>
+                    <ChevronRight size={12} className="text-slate-300 group-hover/item:text-blue-600 group-hover/item:translate-x-1 transition-all" />
+                  </button>
+                ))
+              ) : (
+                <div className="p-6 text-center">
+                  <p className="text-[9px] font-black text-slate-300 uppercase italic tracking-[0.2em]">Node not found</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
+
       </header>
 
       {/* REGISTRATION TERMINAL */}

@@ -43,7 +43,7 @@ const AdminLogin = () => {
       <header className="flex-none bg-[#001d3d] border-b border-white/10 px-8 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <img src="/npc-logo.png" alt="NPC" className="h-10 w-10 object-contain brightness-0 invert" />
+            <img src="/npc-new-logo.png" alt="NPC" className="h-14 w-14 object-contain opacity-90" />
             <div className="border-l border-white/20 pl-4">
               <h1 className="text-white text-sm font-black tracking-tighter uppercase leading-none">
                 National Power Corporation

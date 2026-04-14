@@ -113,9 +113,9 @@ const SurveyForm = ({ selectedOfficeId, selectedOfficeName, selectedService, onB
             ← Back
           </button>
           <img
-            src="/npc-docs-logo.png"
+            src="/npc-new-logo.png"
             alt="NPC"
-            className="h-10 w-10 object-contain opacity-100 transition-all"
+            className="h-20 w-20 object-contain opacity-100 transition-all"
           />
         </div>
         <div className="px-6 pb-4">

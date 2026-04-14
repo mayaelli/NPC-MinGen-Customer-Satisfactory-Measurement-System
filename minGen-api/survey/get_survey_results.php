@@ -1,74 +1,98 @@
 <?php
 session_start();
-ob_clean();
+require_once '../config/db.php';
+
 header("Access-Control-Allow-Origin: http://localhost:5173");
 header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, DELETE, PUT");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Content-Type: application/json");
 
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit;
 }
 
-require_once '../config/db.php';
-header("Content-Type: application/json");
-
-// Roles: super_admin = "God Mode" | auditor = "Global View" | manager = Plant-level | office = Unit-level
-$userRole   = $_SESSION['role']      ?? 'office';
-$userOffice = $_SESSION['office_id'] ?? null;
-$userPlant  = $_SESSION['plant_name'] ?? '';
+// 1. CAPTURE SESSION DATA
+$userRole     = $_SESSION['role']      ?? null;
+$userOfficeId = $_SESSION['office_id'] ?? null;
+$userPlant    = $_SESSION['plant_name'] ?? '';
 
 try {
-    // 1. BASE SQL
+    // 2. CHECK AUDITOR STATUS (The "Toggle" Logic)
+    $isAuditor = false;
+    if ($userRole === 'office') {
+        $auditCheck = $conn->prepare("SELECT is_auditor_enabled FROM offices WHERE id = ?");
+        $auditCheck->execute([$userOfficeId]);
+        $officeRow = $auditCheck->fetch();
+        $isAuditor = ($officeRow && $officeRow['is_auditor_enabled'] == 1);
+    }
+
+    // 3. BASE SQL (Changed to LEFT JOIN for safety)
     $sql = "SELECT 
-                s.*, 
-                o.name as office_name, 
-                o.plant_name,
-                asvc.service_name
-            FROM submissions s
-            JOIN offices o ON s.office_id = o.id
-            JOIN arta_services asvc ON s.service_id = asvc.id";
+            s.*, 
+            o.name as office_name, 
+            o.plant_name,
+            asvc.service_name,
+            asvc.service_type,
+            (SELECT AVG(rating) 
+             FROM survey_responses 
+             WHERE submission_id = s.id 
+             AND question_code LIKE 'SQD%') as avg_rating
+        FROM submissions s
+        JOIN offices o ON s.office_id = o.id
+        LEFT JOIN arta_services asvc ON s.service_id = asvc.id";
 
     $whereClauses = [];
     $params = [];
 
-    // --- 2. RBAC FILTERING LOGIC ---
-    if ($userRole === 'super_admin') {
-        // "God Mode" — full access to all data, no filters
-    }
-    elseif ($userRole === 'auditor') {
-        // "Global View" — read-only, sees all data across all plants
-    }
+    // --- 4. THE NEW RBAC LOGIC ---
+    if ($userRole === 'super_admin' || $userRole === 'admin' || $isAuditor) {
+        // "God Mode" / Auditor - No filters, sees everything.
+    } 
     elseif ($userRole === 'manager') {
-        // Plant-level — filtered to their plant only
-        $whereClauses[] = "o.plant_name = ?";
-        $params[] = $userPlant;
-    }
+        // PLANT LEVEL: Managers see all offices within their specific Plant.
+        if (!empty($userPlant)) {
+            $whereClauses[] = "LOWER(o.plant_name) = LOWER(?)";
+            $params[] = trim($userPlant);
+        } else {
+            // Safety: If plant_name is missing from session, return nothing.
+            echo json_encode(["status" => "success", "data" => [], "message" => "No plant assigned to manager."]);
+            exit;
+        }
+    } 
     elseif ($userRole === 'office') {
-        // Unit-level — filtered to their specific office only
-        $whereClauses[] = "s.office_id = ?";
-        $params[] = $userOffice;
+        // UNIT LEVEL: Offices only see their own submissions.
+        if (!empty($userOfficeId)) {
+            $whereClauses[] = "s.office_id = ?";
+            $params[] = $userOfficeId;
+        } else {
+            // Safety: If office_id is missing from session, return nothing.
+            echo json_encode(["status" => "success", "data" => [], "message" => "No office ID found in session."]);
+            exit;
+        }
+    } 
+    else {
+        // Unauthorized or Guest access.
+        echo json_encode(["status" => "error", "message" => "Unauthorized Access"]);
+        exit;
     }
 
-    // Append filters if they exist
     if (!empty($whereClauses)) {
         $sql .= " WHERE " . implode(" AND ", $whereClauses);
     }
 
     $sql .= " ORDER BY s.created_at DESC";
 
-    // Prepare and execute the main query
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
     $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // 3. FETCH RATINGS (Keep your existing pivot logic)
+    // 5. FETCH RATINGS (Pivot Logic)
     foreach ($submissions as &$s) {
-        $subId = $s['id'];
         $ratingSql = "SELECT question_code, rating FROM survey_responses WHERE submission_id = ?";
         $ratingStmt = $conn->prepare($ratingSql);
-        $ratingStmt->execute([$subId]);
+        $ratingStmt->execute([$s['id']]);
         $ratings = $ratingStmt->fetchAll(PDO::FETCH_ASSOC);
 
         foreach ($ratings as $r) {

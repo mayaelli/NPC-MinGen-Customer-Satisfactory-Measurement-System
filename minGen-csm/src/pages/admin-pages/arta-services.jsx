@@ -335,7 +335,7 @@ const ArtaServices = () => {
 )}
 
       {/* MANIFEST LISTING */}
-      <div className="space-y-12">
+      <div className="space-y-4">
         {Object.entries(visibleServices.reduce((acc, s) => {
           const p = s.plant_name || "UNASSIGNED";
           const o = s.office_name || "UNASSIGNED";
@@ -344,66 +344,92 @@ const ArtaServices = () => {
           acc[p][o].push(s);
           return acc;
         }, {})).map(([plant, officesInPlant]) => (
-          <div key={plant}>
-            <div className="flex items-center gap-4 mb-6">
-              <div className="bg-[#001d3d] text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg">{plant}</div>
-              <div className="h-[1px] flex-grow bg-slate-200"></div>
+          <div key={plant} className="space-y-2">
+            {/* PLANT HEADER */}
+            <div className="flex items-center gap-3 py-2">
+              <span className="bg-slate-800 text-white px-2 py-0.5 rounded text-[11px] font-black uppercase tracking-tighter">
+                {plant}
+              </span>
+              <div className="h-[1px] flex-grow bg-slate-100"></div>
             </div>
-            <div className="grid grid-cols-1 gap-6 px-4">
+
+            <div className="grid grid-cols-1 gap-2">
               {Object.entries(officesInPlant).map(([office, srvs]) => (
-                <div key={office} className="space-y-4">
-                  <div className="flex items-center gap-2"><ChevronRight size={14} className="text-blue-600" /><span className="text-[11px] font-black text-blue-900 uppercase">{office}</span></div>
-                  <div className="grid grid-cols-1 gap-3">
+                <details key={office} className="group bg-white border border-slate-200 rounded-lg overflow-hidden transition-all" open>
+                  <summary className="flex items-center justify-between p-3 cursor-pointer hover:bg-slate-50 list-none">
+                    <div className="flex items-center gap-2">
+                      <ChevronRight size={14} className="text-slate-400 group-open:rotate-90 transition-transform" />
+                      <span className="text-[11px] font-bold text-slate-700 uppercase">{office}</span>
+                      <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 rounded-full font-bold">{srvs.length}</span>
+                    </div>
+                  </summary>
+
+                  <div className="p-2 pt-0 space-y-1 bg-slate-50/30">
                     {srvs.map((s) => {
-                      const canEdit = role === 'super_admin' || (role === 'manager' && String(s.plant_name).toLowerCase() === String(user.plant_name).toLowerCase()) || (role === 'office' && String(s.office_id) === String(user.office_id));
+                      const canEdit = role === 'super_admin' || 
+                                    (role === 'manager' && String(s.plant_name).toLowerCase() === String(user.plant_name).toLowerCase()) || 
+                                    (role === 'office' && String(s.office_id) === String(user.office_id));
+                      
                       return (
-                        <div key={s.id} className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:border-blue-200 transition-all group">
-                          <div className="flex flex-col md:flex-row justify-between items-start gap-6">
-                            <div className="w-full space-y-4">
-                              {editingId === s.id ? (
-                                <div className="space-y-3 animate-in slide-in-from-left-2 duration-300">
-                                  <div className="space-y-1">
-                                    <label className="text-[8px] font-black text-blue-600 uppercase ml-1">Edit Service Name</label>
-                                    <textarea className="w-full bg-slate-50 border-2 border-blue-600 rounded-xl p-3 text-[11px] font-black uppercase outline-none" value={editData.service_name} onChange={e => setEditData({...editData, service_name: e.target.value})} />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <label className="text-[8px] font-black text-blue-600 uppercase ml-1">Edit Description</label>
-                                    <textarea className="w-full bg-slate-50 border-2 border-blue-600 rounded-xl p-3 text-[11px] font-black uppercase outline-none min-h-[100px]" value={editData.service_description} onChange={e => setEditData({...editData, service_description: e.target.value})} />
-                                  </div>
+                        <div key={s.id} className="bg-white border border-slate-100 rounded-md p-2 hover:shadow-sm transition-all">
+                          {editingId === s.id ? (
+                            /* EDIT MODE - Compact */
+                            <div className="space-y-2 p-2 bg-blue-50/50 rounded-md border border-blue-100 animate-in fade-in duration-300">
+                              <input 
+                                className="w-full bg-white border border-blue-300 rounded px-2 py-1 text-[11px] font-bold uppercase outline-none" 
+                                value={editData.service_name} 
+                                onChange={e => setEditData({...editData, service_name: e.target.value})} 
+                              />
+                              <textarea 
+                                className="w-full bg-white border border-blue-300 rounded px-2 py-1 text-[10px] uppercase outline-none min-h-[60px]" 
+                                value={editData.service_description} 
+                                onChange={e => setEditData({...editData, service_description: e.target.value})} 
+                              />
+                              <div className="flex justify-end gap-2">
+                                <button onClick={() => handleUpdate(s.id)} className="px-3 py-1 bg-emerald-600 text-white rounded text-[10px] font-bold uppercase">Save</button>
+                                <button onClick={() => setEditingId(null)} className="px-3 py-1 bg-slate-200 text-slate-600 rounded text-[10px] font-bold uppercase">Cancel</button>
+                              </div>
+                            </div>
+                          ) : (
+                            /* VIEW MODE - Slim Row */
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-3 overflow-hidden">
+                                <span className={`shrink-0 px-1.5 py-0.5 rounded text-[7px] font-black border ${
+                                  s.service_type === 'EXTERNAL' 
+                                    ? 'bg-amber-50 text-amber-600 border-amber-200' 
+                                    : 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                                }`}>
+                                  {s.service_type || 'INTERNAL'}
+                                </span>
+                                <div className="truncate">
+                                  <p className="text-[11px] font-bold text-slate-800 uppercase truncate">{s.service_name}</p>
+                                  <p className="text-[9px] text-slate-400 italic truncate max-w-md">{s.service_description || 'No description'}</p>
                                 </div>
-                              ) : (
-                                <>
-                                  <div>
-                                    <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">{s.service_name}</p>
-                                    <div className="mt-2 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                                      
-                                      <p className="text-[10px] font-bold text-slate-500 uppercase leading-relaxed italic">{s.service_description || 'No description recorded.'}</p>
-                                    </div>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                            <div className="flex gap-2 shrink-0 self-start md:self-center">
+                              </div>
+
                               {canEdit && (
-                                editingId === s.id ? (
-                                  <div className="flex flex-col gap-2">
-                                    <button onClick={() => handleUpdate(s.id)} className="p-3 bg-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all"><Check size={18} /></button>
-                                    <button onClick={() => setEditingId(null)} className="p-3 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 transition-all"><X size={18} /></button>
-                                  </div>
-                                ) : (
-                                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                                    <button onClick={() => { setEditingId(s.id); setEditData({service_name: s.service_name, service_description: s.servdescription || ''}); }} className="p-2 text-slate-400 hover:text-blue-600 bg-slate-50 rounded-lg transition-colors"><Edit3 size={14} /></button>
-                                    <button onClick={() => handleDelete(s.id)} className="p-2 text-slate-400 hover:text-red-600 bg-slate-50 rounded-lg transition-colors"><Trash2 size={14} /></button>
-                                  </div>
-                                )
+                                <div className="flex gap-1 shrink-0">
+                                  <button 
+                                    onClick={() => { setEditingId(s.id); setEditData({service_name: s.service_name, service_description: s.service_description || ''}); }} 
+                                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                  >
+                                    <Edit3 size={12} />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDelete(s.id)} 
+                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
                               )}
                             </div>
-                          </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
-                </div>
+                </details>
               ))}
             </div>
           </div>

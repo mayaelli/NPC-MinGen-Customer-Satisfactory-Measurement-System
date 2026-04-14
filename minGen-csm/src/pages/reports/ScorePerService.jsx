@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 
 const ScorePerService = ({ 
   services = [], 
@@ -22,30 +22,60 @@ const ScorePerService = ({
    * 1. Check if we are 'Global' view or Super Admin - if so, don't filter by office.
    * 2. Otherwise, match by office_id or office_name (flexible matching).
    */
-  const officeSpecificServices = services.filter(s => {
-    // If no user/office is provided, show all (fallback)
-    if (!user?.office_id && office === "Mindanao Generation") return true;
-    
-    // Match by ID (preferred) or Name
-    return String(s.office_id) === String(user?.office_id) || 
-           s.office_name?.toLowerCase().includes(office.toLowerCase());
-  });
+  
+  const officeSpecificServices = useMemo(() => {
+    return services.filter(s => {
+      // If Global/All is selected, show everything
+      if (office === "All" || office === "NPC Mindanao Generation") return true;
+      
+      // Match by ID or Name
+      const matchesId = String(s.office_id) === String(user?.office_id);
+      const matchesName = s.office_name?.toUpperCase() === office?.toUpperCase();
+      
+      return matchesId || matchesName;
+    });
+  }, [services, office, user]);
 
-  const internalServices = services.filter(s => {
-    // Check 'type', 'service_type', or 'category' for the word 'internal'
-    const type = (s.type || s.service_type || s.category || "").toLowerCase();
-    return type === 'internal';
-  });
+  const aggregatedServices = useMemo(() => {
+    const groups = {};
 
-  const externalServices = services.filter(s => {
-    const type = (s.type || s.service_type || s.category || "").toLowerCase();
-    return type === 'external';
-  });
+    officeSpecificServices.forEach(s => {
+      const name = s.service_name?.toUpperCase() || "UNKNOWN SERVICE";
+      if (!groups[name]) {
+        groups[name] = {
+          service_name: name,
+          responses: 0,
+          transactions: 0,
+          // Fallback check for service type
+          type: (s.type || s.service_type || s.category || "internal").toLowerCase()
+        };
+      }
+      // Sum up the values
+      groups[name].responses += Number(s.responses || 0);
+      groups[name].transactions += Number(s.transactions || 0);
+    });
+
+    return Object.values(groups);
+  }, [officeSpecificServices]);
+
+  const internalServices = aggregatedServices.filter(s => s.type === 'internal');
+  const externalServices = aggregatedServices.filter(s => s.type === 'external');
+  
   // 3. Calculation for Overall Total
   const validServices = officeSpecificServices.filter(s => Number(s.transactions) > 0);
   const avgPercentage = validServices.length > 0 
     ? (validServices.reduce((sum, s) => sum + ((s.responses / s.transactions) * 100), 0) / validServices.length).toFixed(2)
     : 0;
+
+  const calcTotal = (group) => {
+  const valid = group.filter(s => Number(s.transactions) > 0);
+    return valid.length > 0 
+      ? (valid.reduce((sum, s) => sum + ((s.responses / s.transactions) * 100), 0) / valid.length).toFixed(2)
+      : "0.00";
+  };
+
+  const externalTotal = calcTotal(externalServices);
+  const internalTotal = calcTotal(internalServices);
 
   return (
     <div 
@@ -55,7 +85,7 @@ const ScorePerService = ({
     >
       {/* HEADER SECTION */}
       <div className="text-center flex flex-col items-center mb-8">
-        <img src="/npc-docs-logo.png" alt="NPC Logo" className="w-16 h-16 object-contain mb-2" />
+        <img src="/npc-new-logo.png" alt="NPC Logo" className="w-16 h-16 object-contain mb-2" />
         <h2 className="text-[14px] font-bold uppercase leading-tight">National Power Corporation</h2>
         <h2 className="text-[14px] font-bold uppercase leading-tight">Mindanao Generation</h2>
         <h2 className="text-[12px] font-bold uppercase leading-tight">Integrated Management System</h2>
@@ -91,7 +121,7 @@ const ScorePerService = ({
           
           <tr className="bg-white font-bold">
             <td className="border border-black p-2 text-left">External Service Total</td>
-            <td className="border border-black p-2"></td>
+            <td className="border border-black p-2 text-center">{externalTotal}%</td>
           </tr>
 
           {/* INTERNAL SERVICES */}
@@ -123,7 +153,7 @@ const ScorePerService = ({
 
           <tr className="bg-white font-bold">
             <td className="border border-black p-2 text-left italic">Internal Service Total</td>
-            <td className="border border-black p-2 text-center"></td>
+            <td className="border border-black p-2 text-center">{internalTotal}%</td>
           </tr>
 
           {/* OVERALL TOTAL */}

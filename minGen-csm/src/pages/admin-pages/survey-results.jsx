@@ -153,12 +153,12 @@ const SurveyResults = () => {
           <p className="text-[10px] font-bold text-blue-600/60 uppercase tracking-widest mt-1">
             {user.role === 'manager' && "Monitoring all offices under your jurisdiction"}
             {user.role === 'office' && !user.is_auditor_enabled && `Restricted to ${user.office_name}`}
-            {(user.role === 'super_admin' || user.is_auditor_enabled == 1) && "Global System Oversight Access"}
+            {(user.role === 'super_admin' || user.role === 'admin' || user.is_auditor_enabled == 1) && "Global System Oversight Access"}
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {(user.role === 'super_admin' || user.role === 'manager' || user.is_auditor_enabled == 1) && (
+          {(user.role === 'super_admin' || user.role === 'admin' || user.role === 'manager' || user.is_auditor_enabled == 1) && (
             <button onClick={fetchResults} className="flex items-center gap-2 bg-[#001d3d] hover:bg-blue-800 px-5 py-3 rounded-xl text-white font-black text-[10px] uppercase tracking-widest transition-all shadow-lg active:scale-95">
               <RotateCcw size={14} /> Refresh ({data.length})
             </button>
@@ -442,7 +442,7 @@ const SurveyResults = () => {
             <div className="absolute top-[5mm] left-0 right-0 flex flex-col items-center text-center">
               <div className="mb-1">
                 <img 
-                  src="/npc-docs-logo.png" 
+                  src="/npc-new-logo.png" 
                   alt="NPC Logo" 
                   className="w-15 h-15 object-contain" 
                 />

@@ -19,11 +19,19 @@ import SQDEvaluationTable from '../reports/SQDEvaluationTable';
 import CSMTabulationTable from '../reports/CSMTabulationTable';
 import ScorePerService from '../reports/ScorePerService';
 
-export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'ISTD', plant_id: 'OMD'} }) => {
+export const ReportsPage = ({ data = [], allOffices = [], user }) => {
   // Logic Preserved
-  const isGlobalView = ['super_admin', 'auditor'].includes(user.role);
+
+  const hadMultipleOffices = useMemo(() => {
+    if (!data || data.length === 0) return false;
+    const uniqueIds = [...new Set(data.map(d => d.office_id))];
+    return uniqueIds.length > 1;
+  }, [data]);
+  
+  const isGlobalView = ['super_admin', 'auditor', 'admin'].includes(user.role) ||
+                        user.is_auditor === 1 || user.is_auditor === true || hadMultipleOffices;
   const isManager = user.role === 'manager';
-  const isOffice = user.role === 'office';
+  const isOffice = user.role === 'office' && !isGlobalView;
 
   const [activeReport, setActiveReport] = useState('cc');
   const [targetOffice, setTargetOffice] = useState(isGlobalView ? 'All' : user.office_name);
@@ -34,6 +42,8 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
     range: "JANUARY TO MARCH",
     year: "2026"
   });
+
+  const [allPossibleServices, setAllPossibleServices] = useState([]);
 
   const fullPeriodString = `${reportPeriod.range} ${reportPeriod.year}`;
 
@@ -74,6 +84,13 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
     };
   });
 
+  // If the user is identified as having Global View, default them to 'All'
+  useEffect(() => {
+    if (isGlobalView && targetOffice !== 'All' && !isManager) {
+      setTargetOffice('All');
+    }
+  }, [isGlobalView, isManager]);
+
   useEffect(() => {
     localStorage.setItem('report_signatories', JSON.stringify(signatories));
   }, [signatories]);
@@ -83,26 +100,38 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
   };
 
   const reportData = useMemo(() => {
-    if (!data || data.length === 0) return [];
-    if (isGlobalView && targetOffice === 'All') return data;
-    return data.filter(d => d.office_name?.toString().toUpperCase() === targetOffice.toUpperCase());
-  }, [data, targetOffice, isGlobalView]);
+      if (!data || data.length === 0) return [];
+      if (isGlobalView && targetOffice === 'All') return data;
+      return data.filter(d => d.office_name?.toString().toUpperCase() === targetOffice.toUpperCase());
+    }, [data, targetOffice, isGlobalView]);
 
+ 
   const offices = useMemo(() => {
-    let list = [];
-    if (isGlobalView) {
-      const unique = [...new Set(data.map(d => d.office_name?.toUpperCase()))].filter(Boolean).sort();
-      list = ['All', ...unique];
-    } else if (isManager) {
-      const deptOffices = data.filter(d => d.plant_name === user.plant_name);
-      const unique = [...new Set(deptOffices.map(d => d.office_name?.toUpperCase()))].filter(Boolean).sort();
-      list = unique;
-    } else {
-      list = [user.office_name.toUpperCase()];
-    }
-    return list;
-  }, [data, user]);
+    const masterList = Array.isArray(allOffices) ? allOffices : [];
+    
+    // Get unique names from the data actually returned by the PHP
+    const namesFromData = [...new Set(data.map(d => d.office_name?.toUpperCase()))].filter(Boolean).sort();
 
+    if (isGlobalView) {
+      // Use masterList if available, otherwise fallback to names present in the data
+      const unique = masterList.length > 0 
+        ? [...new Set(masterList.map(o => o.name?.toUpperCase()))].filter(Boolean).sort()
+        : namesFromData;
+      
+      return ['All', ...unique];
+    } 
+    
+    if (isManager) {
+      const plantOffices = masterList.filter(o => 
+        String(o.plant_name || '').toLowerCase() === String(user.plant_name || '').toLowerCase()
+      );
+      return plantOffices.length > 0 
+        ? plantOffices.map(o => (o.name || 'Unknown').toUpperCase()).sort()
+        : [user.office_name?.toUpperCase()];
+    }
+
+    return [user.office_name?.toUpperCase() || 'OFFICE NOT FOUND'];
+  }, [allOffices, data, user, isGlobalView, isManager]);
   const displayOfficeName = targetOffice === 'All' ? 'NPC Mindanao Generation' : targetOffice;
 
   return (
@@ -244,6 +273,22 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
           )}
         </div>
 
+        {isGlobalView && targetOffice === 'All' && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Submissions</p>
+              <p className="text-2xl font-black text-[#001d3d]">{data.length}</p>
+            </div>
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Offices</p>
+              <p className="text-2xl font-black text-indigo-600">
+                {[...new Set(data.map(d => d.office_id))].length}
+              </p>
+            </div>
+            {/* Add more stats like average rating here */}
+          </div>
+        )}
+
         {/* TAB NAVIGATION */}
         <div className="flex flex-wrap gap-2 p-1.5 bg-slate-200/50 rounded-2xl backdrop-blur-sm w-fit mx-auto mb-12 border border-slate-200">
           <TabButton active={activeReport === 'cc'} onClick={() => setActiveReport('cc')} icon={<ClipboardCheck size={14}/>} label="Part A: CC Report" />
@@ -266,7 +311,7 @@ export const ReportsPage = ({ data = [], user = {role: 'office', office_name: 'I
           ) : activeReport === 'sqd' ? (
             <SQDEvaluationTable reportData={reportData} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
           ) : activeReport === 'csm-tab' ? (
-            <CSMTabulationTable services={reportData} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
+            <CSMTabulationTable services={reportData} allPossibleServices={allPossibleServices} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
           ) : activeReport === 'csm-score' ? (
             <ScorePerService services={reportData} user={user} office={displayOfficeName} signatories={signatories} period={fullPeriodString} />
           ) : (

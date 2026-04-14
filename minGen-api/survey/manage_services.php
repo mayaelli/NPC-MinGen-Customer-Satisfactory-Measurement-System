@@ -1,9 +1,8 @@
 <?php
-// 1. SESSION MUST BE FIRST
 session_start();
 require_once '../config/db.php';
 
-// 2. HEADERS
+// HEADERS (Keep as is)
 header("Access-Control-Allow-Origin: http://localhost:5173");
 header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
@@ -15,114 +14,102 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-
 $method = $_SERVER['REQUEST_METHOD'];
-
-// 3. CAPTURE ROLE (Check if session actually exists)
 $userRole     = $_SESSION['role']     ?? null;
 $userOfficeId = $_SESSION['office_id'] ?? null;
 
-
 try {
+    // --- GET BLOCK ---
+    // --- UPDATED GET BLOCK WITH GROUPING ---
     if ($method === 'GET') {
-        $sql = "SELECT s.*, o.name as office_name, o.plant_name 
+        // 1. Added o.plant_name to SELECT so React can group by Plant
+        $sql = "SELECT 
+                    s.id,
+                    s.service_name, 
+                    s.service_type, 
+                    s.office_id,
+                    o.name as office_name,
+                    o.plant_name,
+                    COUNT(sub.id) as responses,
+                    COUNT(sub.id) as transactions 
                 FROM arta_services s
-                LEFT JOIN offices o ON s.office_id = o.id";
+                LEFT JOIN offices o ON s.office_id = o.id
+                LEFT JOIN submissions sub ON s.id = sub.service_id";
         
-        // If the user is just an 'office' role, only show THEIR services
-        if ($userRole === 'office') {
+        $params = [];
+
+        // 2. Logic Split: Managers see the whole Plant, Office sees one Office
+        if ($userRole === 'manager') {
+            $sql .= " WHERE o.plant_name = :pName";
+            $params = ['pName' => $_SESSION['plant_name']]; // Ensure plant_name is in session
+        } elseif ($userRole === 'office') {
             $sql .= " WHERE s.office_id = :offId";
-            $sql .= " ORDER BY o.name ASC";
-            $stmt = $conn->prepare($sql);
-            $stmt->execute(['offId' => $userOfficeId]);
-        } else {
-            // Super admins see everything
-            $sql .= " ORDER BY o.plant_name ASC, o.name ASC";
-            $stmt = $conn->query($sql);
+            $params = ['offId' => $userOfficeId];
         }
+
+        // 3. GROUP BY must include EVERY non-aggregated column
+        $sql .= " GROUP BY s.id, s.service_name, s.service_type, s.office_id, o.name, o.plant_name";
+        $sql .= " ORDER BY o.name ASC, s.service_name ASC";
+
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
         
-        $results = $stmt->fetchAll(PDO::FETCH_ASSOC); 
-        echo json_encode(["status" => "success", "data" => $results]); 
+        echo json_encode(["status" => "success", "data" => $stmt->fetchAll(PDO::FETCH_ASSOC)]); 
+        exit;
     } elseif ($method === 'POST') {
-        // If super_admin is getting 403, it's because $userRole is null (Session lost)
-        if (!in_array($userRole, ['super_admin', 'office'])) {
+        // Allow all 4 roles to create
+        if (!in_array($userRole, ['super_admin', 'admin', 'office', 'manager'])) {
             http_response_code(403);
-            echo json_encode(["status" => "error", "message" => "Forbidden: Role is " . ($userRole ?? 'None')]);
-            exit();
+            exit(json_encode(["status" => "error", "message" => "Forbidden"]));
         }
 
         $data = json_decode(file_get_contents("php://input"));
-
-        if ($userRole === 'office') {
+        
+        // Force office/manager to use their own ID
+        if (in_array($userRole, ['office', 'manager'])) {
             $data->office_id = $userOfficeId;
         }
 
         if (!empty($data->office_id) && !empty($data->service_name)) {
-            $stmt = $conn->prepare("INSERT INTO arta_services (office_id, service_name) VALUES (?, ?)");
-            $stmt->execute([$data->office_id, strtoupper($data->service_name)]);
+            $stmt = $conn->prepare("INSERT INTO arta_services (office_id, service_name, service_type, service_description) VALUES (?, ?, ?, ?)");
+            $stmt->execute([$data->office_id, strtoupper($data->service_name), strtoupper($data->service_type), strtoupper($data->service_description)]);
+            
+            logAction($conn, $_SESSION['user_id'], 'CREATE', 'arta_services', "Added Service: " . strtoupper($data->service_name));
             echo json_encode(["status" => "success", "message" => "Service mapped!"]);
-        } else {
-            echo json_encode(["status" => "error", "message" => "Missing fields"]);
         }
-    } elseif ($method === 'PUT') {
-        if (!in_array($userRole, ['super_admin', 'office'])) {
+
+    } elseif ($method === 'PUT' || $method === 'DELETE') {
+        // Allow all 4 roles to modify/delete
+        if (!in_array($userRole, ['super_admin', 'admin', 'office', 'manager'])) {
             http_response_code(403);
-            echo json_encode(["status" => "error", "message" => "Forbidden"]);
-            exit();
+            exit(json_encode(["status" => "error", "message" => "Forbidden"]));
         }
 
-        $data = json_decode(file_get_contents("php://input"));
+        $id = ($method === 'PUT') ? json_decode(file_get_contents("php://input"))->id : $_GET['id'];
 
-        if (empty($data->id) || empty($data->service_name)) {
-            echo json_encode(["status" => "error", "message" => "Required fields missing"]);
-            exit();
-        }
-
-        // office role may only edit services that belong to their own office
-        if ($userRole === 'office') {
-            $check = $conn->prepare("SELECT office_id FROM arta_services WHERE id = ?");
-            $check->execute([$data->id]);
-            $svc = $check->fetch();
-            if (!$svc || (string)$svc['office_id'] !== (string)$userOfficeId) {
-                http_response_code(403);
-                echo json_encode(["status" => "error", "message" => "Forbidden"]);
-                exit();
-            }
-        }
-
-        $stmt = $conn->prepare("UPDATE arta_services SET service_name = ? WHERE id = ?");
-        $stmt->execute([strtoupper($data->service_name), $data->id]);
-        echo json_encode(["status" => "success", "message" => "Service updated!"]);
-
-    } elseif ($method === 'DELETE') {
-        error_log("Role: " . $userRole . " Office: " . $userOfficeId);
-        if (!in_array($userRole, ['super_admin', 'office'])) {
-            http_response_code(403);
-            echo json_encode(["status" => "error", "message" => "Forbidden"]);
-            exit();
-        }
-
-        if (!isset($_GET['id'])) {
-            throw new Exception("ID required");
-        }
-
-        $id = $_GET['id'];
-
-        // office role may only delete their own services
-        if ($userRole === 'office') {
+        // SECURITY: 'office' and 'manager' roles can only touch THEIR office's rows
+        if (in_array($userRole, ['office', 'manager'])) {
             $check = $conn->prepare("SELECT office_id FROM arta_services WHERE id = ?");
             $check->execute([$id]);
             $svc = $check->fetch();
             if (!$svc || (string)$svc['office_id'] !== (string)$userOfficeId) {
                 http_response_code(403);
-                echo json_encode(["status" => "error", "message" => "Forbidden"]);
-                exit();
+                exit(json_encode(["status" => "error", "message" => "Unauthorized to modify this service"]));
             }
         }
 
-        $stmt = $conn->prepare("DELETE FROM arta_services WHERE id = ?");
-        $stmt->execute([$id]);
-        echo json_encode(["status" => "success", "message" => "Service removed!"]);
+        if ($method === 'PUT') {
+            $data = json_decode(file_get_contents("php://input"));
+            $stmt = $conn->prepare("UPDATE arta_services SET service_name = ?, service_type = ?, service_description = ? WHERE id = ?");
+            $stmt->execute([strtoupper($data->service_name), strtoupper($data->service_type), strtoupper($data->service_description), $data->id]);
+            logAction($conn, $_SESSION['user_id'], 'UPDATE', 'arta_services', "Updated Service ID: " . $data->id);
+            echo json_encode(["status" => "success", "message" => "Service updated!"]);
+        } else {
+            $stmt = $conn->prepare("DELETE FROM arta_services WHERE id = ?");
+            $stmt->execute([$id]);
+            logAction($conn, $_SESSION['user_id'], 'DELETE', 'arta_services', "Deleted Service ID: " . $id);
+            echo json_encode(["status" => "success", "message" => "Service removed!"]);
+        }
     }
 } catch (Exception $e) {
     http_response_code(500);

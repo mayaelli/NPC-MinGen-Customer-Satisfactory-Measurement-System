@@ -18,7 +18,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 try {
     if ($method === 'GET') {
-        $sql = "SELECT offices.*, offices.is_auditor_enabled, users.username, users.raw_password, users.role 
+        $sql = "SELECT offices.*, offices.is_auditor_enabled, users.id as user_uid, users.username, users.raw_password, users.role, users.is_active
             FROM offices 
             LEFT JOIN users ON offices.id = users.office_id 
             ORDER BY offices.plant_name ASC, offices.parent_id ASC";
@@ -101,6 +101,9 @@ try {
                 ]);
 
                 $conn->commit();
+
+                logAction($conn, $_SESSION['user_id'], 'CREATE', 'offices', "Created Office: " . $data->name . " with User: " . $username);
+
                 echo json_encode([
                     "status" => "success", 
                     "message" => "Account created: $username"
@@ -119,6 +122,9 @@ try {
         $id = $_GET['id'];
         $stmt = $conn->prepare("DELETE FROM offices WHERE id = ?");
         $stmt->execute([$id]);
+
+        logAction($conn, $_SESSION['user_id'], 'DELETE', 'offices', "Deleted Office ID: " . $id);
+        
         echo json_encode(["status" => "success", "message" => "Data removed"]);
     }
 
@@ -152,6 +158,8 @@ try {
                     // Update the users table linked to this office
                     $stmtUser = $conn->prepare("UPDATE users SET password = ?, raw_password = ? WHERE office_id = ?");
                     $stmtUser->execute([$newHashedPassword, $newPlainPassword, $data->id]);
+
+                    logAction($conn, $_SESSION['user_id'], 'UPDATE', 'users', "Reset password for Office ID: " . $data->id);
                     
                     $message = "Office updated and Password reset to: $newPlainPassword";
                 }

@@ -13,7 +13,20 @@ const AdminPage = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [user, setUser] = useState(null);
   const [surveys, setSurveys] = useState([]); 
+  const [offices, setOffices] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const fetchOfficeData = async () => {
+    try {
+      const response = await fetch('http://localhost/MinGen%20CSM/minGen-api/survey/manage_offices.php'); 
+      const result = await response.json();
+      if (result.status === "success") {
+        setOffices(result.data); 
+      }
+    } catch (error) {
+      console.error("Office Fetch Error:", error);
+    }
+  };
 
   // Logic remains untouched as requested
   useEffect(() => {
@@ -23,6 +36,7 @@ const AdminPage = () => {
     } else {
       setUser(JSON.parse(savedUser));
       fetchSurveyData();
+      fetchOfficeData();
     }
   }, [navigate]);
 
@@ -113,7 +127,7 @@ const AdminPage = () => {
           return <AdminDashboard data={surveys} user={user} />;
 
         case 'results': return <SurveyResults data={surveys} />;
-        case 'reports': return <ReportsPage data={surveys} user={user} />;
+        case 'reports': return <ReportsPage data={surveys} allOffices={offices} user={user} />;
 
         default: 
           return <AdminDashboard data={surveys} user={user} />;
@@ -130,7 +144,7 @@ const AdminPage = () => {
         {/* Sidebar Header */}
         <div className="p-8 pb-10">
           <div className="flex flex-col gap-4">
-            <img src="/npc-logo.png" alt="NPC" className="h-12 w-12 object-contain brightness-0 invert opacity-90" />
+            <img src="/npc-new-logo.png" alt="NPC" className="h-14 w-14 object-contain opacity-90" />
             <div className="space-y-1">
               <h1 className="font-black text-lg tracking-tighter leading-none uppercase italic">Mindanao Gen</h1>
               <p className="text-[9px] text-blue-400 font-black tracking-[0.3em] uppercase">Control Center v2.0</p>

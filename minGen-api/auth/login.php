@@ -22,7 +22,7 @@ if (!empty($data->username) && !empty($data->password)) {
     try {
         // --- SECURITY: RATE LIMITING (INSERTED HERE) ---
         $user_ip = $_SERVER['REMOTE_ADDR'];
-        $block_time = 1; // Minutes to block
+        $block_time = 5; // Minutes to block
         
         // Check for failed attempts in the last 15 minutes
         $limit_stmt = $conn->prepare("SELECT COUNT(*) FROM login_attempts WHERE ip_address = :ip AND attempt_time > DATE_SUB(NOW(), INTERVAL :minutes MINUTE)");
@@ -53,13 +53,30 @@ if (!empty($data->username) && !empty($data->password)) {
             $isRawValid = ($data->password === $user['raw_password']);
 
             if ($isHashValid || $isRawValid) {
+
+                if ((int)$user['is_active'] === 0) {
+                    http_response_code(403); // Forbidden
+                    echo json_encode([
+                        "status" => "error", 
+                        "message" => "This account has been deactivated. Please contact the System Administrator."
+                    ]);
+                    exit;
+                }
+
                 // SUCCESS: Clear old failed attempts for this IP since they logged in correctly
                 $clear_stmt = $conn->prepare("DELETE FROM login_attempts WHERE ip_address = :ip");
                 $clear_stmt->execute([':ip' => $user_ip]);
 
+                $update_login = $conn->prepare("UPDATE users SET last_login = NOW() WHERE id = :id");
+                $update_login->execute([':id' => $user['id']]);
+                
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['role'] = $user['role'];
+                $_SESSION['username'] = $user['username']; // Added this to session for logging clarity
                 $_SESSION['office_id'] = $user['office_id'];
+                $_SESSION['plant_name'] = $user['plant_name'];
+
+                logAction($conn, $user['id'], 'LOGIN', 'users', "System access granted. Session started for " . $user['username']);
                 
                 unset($user['password']);
                 unset($user['raw_password']); // Also remove the raw password!

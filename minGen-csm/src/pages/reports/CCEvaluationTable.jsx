@@ -24,7 +24,7 @@ const CCEvaluationTable = ({ reportData = [], office = "ISTD", signatories = {},
         <div className="mb-2">
           {/* Correctly referencing the public folder logo */}
           <img 
-            src="/npc-docs-logo.png" 
+            src="/npc-new-logo.png" 
             alt="NPC Logo" 
             className="w-20 h-20 object-contain" 
           />

@@ -23,7 +23,7 @@ function HomePage() {
         
         <div className="bg-white px-8 py-3 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-4">
-            <img src="/npc-logo.png" alt="NPC Logo" className="h-12 w-12 object-contain" />
+            <img src="/npc-new-logo.png" alt="NPC Logo" className="h-13 w-13 object-contain" />
             <div>
               <h1 className="text-[#002855] text-base font-black leading-none tracking-tight">
                 NATIONAL POWER CORPORATION

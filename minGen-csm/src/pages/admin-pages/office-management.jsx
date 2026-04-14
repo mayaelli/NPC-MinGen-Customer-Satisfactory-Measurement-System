@@ -282,16 +282,28 @@ const OfficeManagement = () => {
             <div key={plantName} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm ring-1 ring-slate-100">
               <button 
                 onClick={() => togglePlant(plantName)}
-                className="w-full flex justify-between items-center px-8 py-5 bg-slate-50/50 hover:bg-slate-100 transition-colors border-b border-slate-100 group"
+                className="w-full flex justify-between items-center px-4 py-2 hover:bg-slate-50 transition-all border-b border-slate-100 group"
               >
-                <div className="flex items-center gap-4">
-                    <div className={`p-1.5 rounded-lg bg-blue-600 text-white transition-transform ${expandedPlants[plantName] ? 'rotate-90' : ''}`}>
-                        <ChevronRight size={14} />
-                    </div>
-                    <h2 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] italic">{plantName}</h2>
+                <div className="flex items-center gap-3">
+                  {/* Minimalist Icon: No heavy blue box, just a clean chevron */}
+                  <ChevronRight 
+                    size={14} 
+                    className={`text-slate-400 transition-transform duration-200 ${expandedPlants[plantName] ? 'rotate-90 text-blue-600' : ''}`} 
+                  />
+                  
+                  <h2 className="text-[10px] font-black text-slate-700 uppercase tracking-widest">
+                    {plantName}
+                  </h2>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-[9px] font-black text-slate-400 bg-white border border-slate-200 px-3 py-1 rounded-full uppercase tracking-tighter shadow-sm">{plantOffices.length} Active Nodes</span>
+
+                <div className="flex items-center gap-2">
+                  {/* Subtler Badge: Text-only or very light tint */}
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">
+                    {plantOffices.length} Offices
+                  </span>
+                  
+                  {/* Decorative line to fill the space if you want that "System" look */}
+                  <div className={`h-1 w-1 rounded-full ${expandedPlants[plantName] ? 'bg-blue-500' : 'bg-slate-300'}`}></div>
                 </div>
               </button>
 

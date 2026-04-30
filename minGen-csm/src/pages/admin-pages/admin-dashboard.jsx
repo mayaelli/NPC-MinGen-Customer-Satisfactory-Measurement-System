@@ -30,7 +30,7 @@ const AdminDashboard = () => {
     if (!currentUser) return;
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost/MinGen%20CSM/minGen-api/survey/get_dashboard_stats.php?scope=${scope}`, {
+      const response = await fetch(`http://localhost/MinGen%20CSM/minGen-api/survey/get_dashboard_stats.php?scope=${scope}&user_id=${currentUser?.id || ''}`, {
         method: 'GET',
         credentials: 'include'
       });
@@ -67,119 +67,68 @@ const AdminDashboard = () => {
   return (
     <div className="space-y-6 animate-in fade-in duration-700 pb-10">
       {/* HEADER */}
-      {/* ENHANCED HEADER */}
-    <div className="relative overflow-hidden bg-[#001d3d] rounded-3xl p-8 text-white shadow-2xl border border-white/5">
-      
-      {/* Abstract Background Decoration */}
-      <div className="absolute top-0 right-0 w-1/2 h-full opacity-10 pointer-events-none">
-        <svg width="100%" height="100%" viewBox="0 0 400 400">
-          <defs>
-            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" strokeWidth="1"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
-        </svg>
-      </div>
-      
-      {/* Animated Glow Orbs */}
-      <div className="absolute -top-24 -left-24 w-64 h-64 bg-blue-600/20 rounded-full blur-[100px] animate-pulse" />
-      <div className="absolute -bottom-24 right-24 w-64 h-64 bg-emerald-500/10 rounded-full blur-[100px]" />
-
-      <div className="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8">
-        <div className="space-y-4">
-          {/* System Status Tags */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-emerald-500/20 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" /> 
-              Live Stream
-            </span>
-            <span className="bg-white/5 text-slate-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-white/10 flex items-center gap-1.5">
-              <ShieldCheck size={12} className="text-blue-400" /> Secure Node
-            </span>
-          </div>
-
-          <div>
-            <h1 className="text-4xl font-black tracking-tighter mb-2 uppercase italic bg-gradient-to-r from-white via-white to-blue-300 bg-clip-text text-transparent">
-              {viewScope === 'global' ? 'Mindanao Generation' : user.plant_name}
-            </h1>
-            <div className="flex items-center gap-4 text-slate-400">
-              <div className="flex items-center gap-2">
-                <LayoutDashboard size={14} className="text-blue-500" />
-                <p className="font-bold text-[10px] uppercase tracking-[0.15em]">
-                  Unit: <span className="text-white">{user.office_name || 'System_Root'}</span>
-                </p>
-              </div>
-              <div className="h-4 w-px bg-white/10 hidden sm:block" />
-              <div className="flex items-center gap-2">
-                <Clock size={14} className="text-blue-500" />
-                <p className="font-bold text-[10px] uppercase tracking-[0.15em]">
-                  Cycle: <span className="text-white">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                </p>
-              </div>
-            </div>
-          </div>
+      <header className="flex items-center gap-6 pb-3 border-b border-[#E2E8F0]">
+        <div className="shrink-0">
+          <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-[0.4em] leading-none mb-1">Page</p>
+          <h1 className="text-xl font-black text-slate-900 uppercase tracking-tight leading-none">Dashboard Overview</h1>
         </div>
-
-        {/* Enhanced Switcher Controls */}
-        <div className="bg-black/20 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 flex shadow-inner">
-          {[
-            { id: 'local', label: 'My Unit', icon: LayoutDashboard },
-            { id: 'global', label: 'Global View', icon: Globe }
-          ].map((tab) => (
+        {/* Scope Switcher */}
+        <div className="flex bg-slate-100 rounded-lg p-0.5 gap-0.5">
+          {[{ id: 'local', label: 'My Unit' }, { id: 'global', label: 'Global' }].map((tab) => (
             <button
               key={tab.id}
               onClick={() => handleScopeChange(tab.id)}
-              className={`
-                relative px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2
-                ${viewScope === tab.id 
-                  ? 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)]' 
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'}
-              `}
+              className={`px-4 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${viewScope === tab.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
             >
-              <tab.icon size={14} />
               {tab.label}
             </button>
           ))}
         </div>
-      </div>
-    </div>
+        <div className="ml-auto flex items-center gap-4 shrink-0">
+          <div className="text-right">
+            <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-[0.3em] leading-none mb-0.5">Office Context</p>
+            <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight leading-none">{user?.plant_name || 'General HQ'}</p>
+          </div>
+          <div className="h-9 w-9 border border-slate-200 flex items-center justify-center text-[10px] text-slate-400 font-black italic">01</div>
+        </div>
+      </header>
+
 
       {/* STATS TILES */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <h5 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Clock size={12} className="text-blue-500" /> Pulse Rate</h5>
-            <div className="flex justify-between items-end">
-                <div><p className="text-2xl font-black text-slate-800 tracking-tighter">99.9%</p><p className="text-[9px] text-emerald-500 font-bold uppercase">Uptime Nominal</p></div>
-                <div className="flex gap-0.5 items-end h-8">
-                    {[4,7,5,8,6,9,4].map((h, i) => <div key={i} className="w-1 bg-blue-100 rounded-full" style={{height: `${h*10}%`}}></div>)}
-                </div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+          <h5 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Clock size={12} className="text-blue-500" /> Pulse Rate</h5>
+          <div className="flex justify-between items-end">
+            <div><p className="text-2xl font-black text-slate-800 tracking-tighter">99.9%</p><p className="text-[9px] text-emerald-500 font-bold uppercase">Uptime Nominal</p></div>
+            <div className="flex gap-0.5 items-end h-8">
+              {[4, 7, 5, 8, 6, 9, 4].map((h, i) => <div key={i} className="w-1 bg-blue-100 rounded-full" style={{ height: `${h * 10}%` }}></div>)}
             </div>
-         </div>
+          </div>
+        </div>
 
-         {[
-           { label: 'Submissions', val: stats.total_submissions, IconComp: Zap, color: 'text-blue-600', bg: 'bg-blue-50' },
-           { label: 'Rating Index', val: Number(stats.overall_satisfaction || 0).toFixed(1), IconComp: Trophy, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-           { label: 'Active Nodes', val: stats.office_count, IconComp: Target, color: 'text-orange-600', bg: 'bg-orange-50' },
-         ].map((stat, i) => {
-           const Icon = stat.IconComp;
-           return (
-             <div key={i} className="bg-white p-5 border border-slate-200 rounded-2xl shadow-sm flex items-center justify-between group">
-               <div>
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
-                 <h3 className="text-2xl font-black text-slate-800 tracking-tighter">{loading ? '...' : stat.val}</h3>
-                 {stat.label === 'Rating Index' && !loading && (
-                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${getRatingStatus(stats.overall_satisfaction).bg} ${getRatingStatus(stats.overall_satisfaction).color}`}>
-                      {getRatingStatus(stats.overall_satisfaction).label}
-                    </span>
-                 )}
-               </div>
-               <div className={`w-12 h-12 ${stat.bg} ${stat.color} rounded-xl flex items-center justify-center transition-transform group-hover:scale-110`}>
-                 <Icon size={20} strokeWidth={2.5} />
-               </div>
-             </div>
-           );
-         })}
+        {[
+          { label: 'Submissions', val: stats.total_submissions, IconComp: Zap, color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: 'Rating Index', val: Number(stats.overall_satisfaction || 0).toFixed(1), IconComp: Trophy, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: 'Active Nodes', val: stats.office_count, IconComp: Target, color: 'text-orange-600', bg: 'bg-orange-50' },
+        ].map((stat, i) => {
+          const Icon = stat.IconComp;
+          return (
+            <div key={i} className="bg-white p-5 border border-slate-200 rounded-2xl shadow-sm flex items-center justify-between group">
+              <div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
+                <h3 className="text-2xl font-black text-slate-800 tracking-tighter">{loading ? '...' : stat.val}</h3>
+                {stat.label === 'Rating Index' && !loading && (
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${getRatingStatus(stats.overall_satisfaction).bg} ${getRatingStatus(stats.overall_satisfaction).color}`}>
+                    {getRatingStatus(stats.overall_satisfaction).label}
+                  </span>
+                )}
+              </div>
+              <div className={`w-12 h-12 ${stat.bg} ${stat.color} rounded-xl flex items-center justify-center transition-transform group-hover:scale-110`}>
+                <Icon size={20} strokeWidth={2.5} />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* CHARTS */}
@@ -189,11 +138,11 @@ const AdminDashboard = () => {
           <div className="h-[250px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
-                <defs><linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={0.1}/><stop offset="95%" stopColor="#2563eb" stopOpacity={0}/></linearGradient></defs>
+                <defs><linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={0.1} /><stop offset="95%" stopColor="#2563eb" stopOpacity={0} /></linearGradient></defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 800, fill: '#94a3b8'}} dy={10} />
-                <YAxis domain={[0, 5]} axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 800, fill: '#94a3b8'}} />
-                <Tooltip contentStyle={{borderRadius: '12px', border: 'none', fontSize: '10px'}} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 800, fill: '#94a3b8' }} dy={10} />
+                <YAxis domain={[0, 5]} axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 800, fill: '#94a3b8' }} />
+                <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', fontSize: '10px' }} />
                 <Area type="monotone" dataKey="score" stroke="#2563eb" strokeWidth={3} fillOpacity={1} fill="url(#colorScore)" />
               </AreaChart>
             </ResponsiveContainer>
@@ -206,7 +155,7 @@ const AdminDashboard = () => {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={submissions.slice(0, 5)}>
                 <XAxis dataKey="office_name" hide />
-                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: 'none', fontSize: '10px'}} />
+                <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', fontSize: '10px' }} />
                 <Bar dataKey="avg_score" radius={[4, 4, 4, 4]} barSize={30}>
                   {submissions.map((_, index) => <Cell key={`cell-${index}`} fill={index % 2 === 0 ? NPC_BLUE : NPC_ACCENT} />)}
                 </Bar>
@@ -245,7 +194,7 @@ const AdminDashboard = () => {
           </table>
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 

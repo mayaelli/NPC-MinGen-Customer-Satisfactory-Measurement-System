@@ -208,7 +208,7 @@ const SQDEvaluationTable = ({ reportData = [], office = "ISTD", signatories = {}
 
       {/* FOOTER */}
       <div className="mt-auto pt-10 text-[10px] font-mono flex justify-between uppercase">
-        <span>MGG-IMS-008.F04 Rev. No. 0</span>
+        <span>MGG-IMS-006.F04 Rev. No. 0</span>
       </div>
     </div>
   );

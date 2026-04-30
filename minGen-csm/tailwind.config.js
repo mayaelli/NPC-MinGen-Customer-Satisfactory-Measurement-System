@@ -9,6 +9,9 @@ export default {
       colors: {
         mingen: '#005a32',
       },
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
     },
   },
   plugins: [],

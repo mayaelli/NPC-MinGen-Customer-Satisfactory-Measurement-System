@@ -16,6 +16,20 @@ header("Content-Type: application/json");
 $userRole = $_SESSION['role'] ?? null;
 $userOfficeId = $_SESSION['office_id'] ?? null;
 $userPlant = $_SESSION['plant_name'] ?? '';
+
+// Fallback: resolve from DB using user_id param if session is missing
+if (!$userRole && isset($_GET['user_id'])) {
+    $uid = intval($_GET['user_id']);
+    $uStmt = $conn->prepare("SELECT u.role, u.office_id, o.plant_name FROM users u LEFT JOIN offices o ON u.office_id = o.id WHERE u.id = ? AND u.is_active = 1 LIMIT 1");
+    $uStmt->execute([$uid]);
+    $uRow = $uStmt->fetch();
+    if ($uRow) {
+        $userRole     = $uRow['role'];
+        $userOfficeId = $uRow['office_id'];
+        $userPlant    = $uRow['plant_name'] ?? '';
+    }
+}
+
 $scope = $_GET['scope'] ?? 'local';
 
 $where = " WHERE 1=1 ";

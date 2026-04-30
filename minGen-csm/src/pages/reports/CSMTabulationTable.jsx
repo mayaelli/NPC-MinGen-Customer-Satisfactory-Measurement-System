@@ -1,58 +1,47 @@
 import React from 'react';
 
-const CSMTabulationTable = ({ 
-  services = [], 
+const CSMTabulationTable = ({
+  services = [],
   allPossibleServices = [],
   office = "ISTD",
-  period = "OCTOBER TO DECEMBER 2025", 
+  period = "OCTOBER TO DECEMBER 2025",
   signatories = {}
 }) => {
 
   const aggregatedServices = React.useMemo(() => {
-  const groups = {};
+    const groups = {};
 
-    // 1. First, initialize the groups with EVERY possible service
-    // This ensures that even services with 0 responses exist in our object
-    if (allPossibleServices) {
+    // 1. Initialize with ALL possible services from the master list (includes unused ones)
+    if (allPossibleServices && allPossibleServices.length > 0) {
       allPossibleServices.forEach(service => {
         const name = service.service_name?.toUpperCase().trim();
-        const type = (service.service_type || "INTERNAL").toUpperCase().trim();
-        
-        groups[name] = { 
-          service_name: name, 
-          responses: 0, 
-          transactions: 0, 
-          type: type 
-        };
+        if (!name) return;
+        const type = (service.service_type || 'INTERNAL').toUpperCase().trim();
+        groups[name] = { service_name: name, responses: 0, transactions: 0, type };
       });
     }
 
-    // 2. Now, loop through the actual submissions (the 'services' prop)
-    // and increment the counts for the ones that actually had feedbacks
+    // 2. Tally actual submissions — use service_type from the submission record
     services.forEach(submission => {
       const name = submission.service_name?.toUpperCase().trim();
-      
+      if (!name) return;
+      const type = (submission.service_type || 'INTERNAL').toUpperCase().trim();
+
       if (groups[name]) {
-        groups[name].responses += 1; 
-        groups[name].transactions += 1; 
+        groups[name].responses += 1;
+        groups[name].transactions += 1;
+        // Ensure type is correct even if master list had a stale value
+        groups[name].type = type;
       } else {
-        // Safety: If a submission exists for a service not in our master list
-        const type = (submission.service_type || "INTERNAL").toUpperCase().trim();
-        groups[name] = { 
-          service_name: name, 
-          responses: 1, 
-          transactions: 1, 
-          type: type 
-        };
+        groups[name] = { service_name: name, responses: 1, transactions: 1, type };
       }
     });
 
     return Object.values(groups);
-  }, [services, allPossibleServices]); // Include both in dependencies
-  // 2. THE FIX: Do NOT filter out zeros for the main table mapping
-  // This ensures the 0s show up in the rows just like your image
-  const externalServices = aggregatedServices.filter(s => s.type === 'EXTERNAL');
-  const internalServices = aggregatedServices.filter(s => s.type === 'INTERNAL');
+  }, [services, allPossibleServices]);
+  // 2. THE FIX: Only show services WITH responses in the main table
+  const externalServices = aggregatedServices.filter(s => s.type === 'EXTERNAL' && s.responses > 0);
+  const internalServices = aggregatedServices.filter(s => s.type === 'INTERNAL' && s.responses > 0);
 
   // 3. THE "NO CLIENTS" LOGIC
   // We still need this for the bottom box
@@ -65,23 +54,23 @@ const CSMTabulationTable = ({
   const totalTransactions = aggregatedServices.reduce((sum, s) => sum + s.transactions, 0);
 
   // Define responseRate here so it's available below
-  const responseRate = totalTransactions > 0 
-    ? ((totalResponses / totalTransactions) * 100).toFixed(0) 
+  const responseRate = totalTransactions > 0
+    ? ((totalResponses / totalTransactions) * 100).toFixed(0)
     : 0;
 
   return (
-    <div 
+    <div
       id="printable-tabulation"
-      className="p-6 w-[8.5in] min-h-[11in] text-black shadow-none border-none pb-25 mx-auto" 
+      className="p-6 w-[8.5in] min-h-[11in] text-black shadow-none border-none pb-25 mx-auto"
       style={{ backgroundColor: '#ffffff', color: '#000000', fontFamily: 'Arial, sans-serif' }}
     >
       {/* 1. HEADER SECTION (Shared Design) */}
       <div className="text-center -mt-4 space-y-0 mb-1 flex flex-col items-center">
         <div className="mb-2">
-          <img 
-            src="/npc-new-logo.png" 
-            alt="NPC Logo" 
-            className="w-20 h-20 object-contain" 
+          <img
+            src="/npc-new-logo.png"
+            alt="NPC Logo"
+            className="w-20 h-20 object-contain"
           />
         </div>
 
@@ -89,11 +78,11 @@ const CSMTabulationTable = ({
           <h2 className="text-[16px] font-bold leading-tight">National Power Corporation</h2>
           <h2 className="text-[16px] font-bold leading-tight">Mindanao Generation</h2>
           <h2 className="text-[14px] font-bold leading-tight">Integrated Management System</h2>
-          
+
           <div className="pt-6">
             <h1 className="text-xl font-bold tracking-tight">CSM TABULATION</h1>
           </div>
-          
+
           <div className="pt-4 text-sm font-bold">
             {office} - NPC Mindanao Generation
           </div>
@@ -154,7 +143,7 @@ const CSMTabulationTable = ({
               **Nothing follows**
             </td>
           </tr>
-          
+
           <tr className="bg-gray-50 font-bold uppercase">
             <td className="border-1 border-black p-2 text-center">Total</td>
             <td className="border-1 border-black p-2 text-center">{totalResponses}</td>
@@ -184,7 +173,7 @@ const CSMTabulationTable = ({
             <div className="grid grid-cols-1 gap-1">
               {noClientServices.map((s, i) => (
                 <div key={i} className="uppercase flex gap-2 text-[11px]">
-                  <span className="font-bold">{i + 1}.</span> 
+                  <span className="font-bold">{i + 1}.</span>
                   <span>{s.service_name}</span>
                 </div>
               ))}

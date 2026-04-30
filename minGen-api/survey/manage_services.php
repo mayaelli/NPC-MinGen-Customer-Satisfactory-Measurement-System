@@ -18,6 +18,18 @@ $method = $_SERVER['REQUEST_METHOD'];
 $userRole     = $_SESSION['role']     ?? null;
 $userOfficeId = $_SESSION['office_id'] ?? null;
 
+// Fallback: resolve from DB using user_id param if session is missing
+if (!$userRole && isset($_GET['user_id'])) {
+    $uid = intval($_GET['user_id']);
+    $uStmt = $conn->prepare("SELECT u.role, u.office_id FROM users u WHERE u.id = ? AND u.is_active = 1 LIMIT 1");
+    $uStmt->execute([$uid]);
+    $uRow = $uStmt->fetch();
+    if ($uRow) {
+        $userRole     = $uRow['role'];
+        $userOfficeId = $uRow['office_id'];
+    }
+}
+
 try {
     // --- GET BLOCK ---
     // --- UPDATED GET BLOCK WITH GROUPING ---

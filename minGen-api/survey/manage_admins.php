@@ -15,9 +15,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-// 3. SECURITY: STICK TO SUPER_ADMIN ONLY
-// Only the top-level Super Admin can manage other Admin accounts
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'super_admin') {
+// 3. SECURITY: SUPER_ADMIN ONLY
+// Primary: PHP session. Fallback: resolve from DB via user_id param.
+$resolvedUserId = $_SESSION['user_id'] ?? null;
+$resolvedRole   = $_SESSION['role']    ?? null;
+
+if (!$resolvedRole && isset($_GET['user_id'])) {
+    $uid = intval($_GET['user_id']);
+    $uStmt = $conn->prepare("SELECT id, role FROM users WHERE id = ? AND is_active = 1 LIMIT 1");
+    $uStmt->execute([$uid]);
+    $uRow = $uStmt->fetch();
+    if ($uRow) {
+        $resolvedUserId = $uRow['id'];
+        $resolvedRole   = $uRow['role'];
+    }
+}
+
+if ($resolvedRole !== 'super_admin') {
     http_response_code(403);
     echo json_encode(["status" => "error", "message" => "Access Denied: Super Admin privileges required."]);
     exit();
@@ -72,7 +86,7 @@ try {
             ]);
 
             // Log this creation
-            logAction($conn, $_SESSION['user_id'], 'CREATE', 'users', "Created Admin account: " . $data->username);
+            logAction($conn, $resolvedUserId, 'CREATE', 'users', "Created Admin account: " . $data->username);
 
             echo json_encode([
                 "status" => "success", 
@@ -95,7 +109,7 @@ try {
         }
 
         // SAFETY: Prevent the Super Admin from disabling themselves
-        if ((int)$data->id === (int)$_SESSION['user_id']) {
+        if ((int)$data->id === (int)$resolvedUserId) {
             echo json_encode(["status" => "error", "message" => "You cannot disable your own account!"]);
             exit();
         }
@@ -104,7 +118,7 @@ try {
         $stmt->execute([(int)$data->status, $data->id]);
 
         $statusText = $data->status ? "ENABLED" : "DISABLED";
-        logAction($conn, $_SESSION['user_id'], 'UPDATE', 'users', "$statusText account ID: " . $data->id);
+        logAction($conn, $resolvedUserId, 'UPDATE', 'users', "$statusText account ID: " . $data->id);
 
         echo json_encode(["status" => "success", "message" => "Account has been $statusText"]);
     }
@@ -115,14 +129,14 @@ try {
     elseif ($method === 'DELETE') {
         $id = $_GET['id'];
 
-        if ($id == $_SESSION['user_id']) {
+        if ($id == $resolvedUserId) {
             throw new Exception("Cannot delete yourself.");
         }
 
         $stmt = $conn->prepare("DELETE FROM users WHERE id = ? AND role = 'admin'");
         $stmt->execute([$id]);
 
-        logAction($conn, $_SESSION['user_id'], 'DELETE', 'users', "Deleted Admin account ID: $id");
+        logAction($conn, $resolvedUserId, 'DELETE', 'users', "Deleted Admin account ID: $id");
 
         echo json_encode(["status" => "success", "message" => "Account removed."]);
     }

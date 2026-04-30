@@ -1,6 +1,6 @@
 // General User inputs
 
-import React, { useState, useEffect, useRef, useMemo} from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import html2pdf from 'html2pdf.js';
 import { Search, RotateCcw, Filter, ChevronLeft, ChevronRight, Download, Printer, FileText, PieChart, User, Calendar, Layers, X } from 'lucide-react';
 
@@ -57,6 +57,7 @@ const A4_PRINT_STYLE = `
 const SurveyResults = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')) || {});
   const [selectedSurvey, setSelectedSurvey] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -70,16 +71,23 @@ const SurveyResults = () => {
 
   const fetchResults = () => {
     setLoading(true);
-    fetch(API_URL, { method: 'GET', credentials: 'include' })
+    setError(null);
+    const userId = user?.id;
+    const url = userId ? `${API_URL}?user_id=${userId}` : API_URL;
+    fetch(url, { method: 'GET', credentials: 'include' })
       .then(res => res.json())
       .then(res => {
-        if (res.status === 'success') setData(res.data);
-        setLoading(false);
+        if (res.status === 'success') {
+          setData(res.data);
+        } else {
+          setError(res.message || 'Failed to load data.');
+        }
       })
       .catch(err => {
         console.error("Fetch Error:", err);
-        setLoading(false);
-      });
+        setError('Network error — could not reach the server.');
+      })
+      .finally(() => setLoading(false));
   };
 
   const handleDownload = () => {
@@ -117,7 +125,7 @@ const SurveyResults = () => {
   const itemsPerPage = 10;
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem); 
+  const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
   const userInsights = (searchTerm.length >= 2 && filteredData.length > 0) ? {
@@ -130,52 +138,59 @@ const SurveyResults = () => {
   } : null;
 
   if (loading) return (
-    <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-      <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] animate-pulse">Syncing Secure Records...</p>
+    <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+      <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] animate-pulse">Syncing Records...</p>
+    </div>
+  );
+
+  if (error) return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
+      <p className="text-[11px] font-black text-red-500 uppercase tracking-widest">Failed to Load Data</p>
+      <p className="text-[10px] text-slate-400">{error}</p>
+      <button onClick={fetchResults} className="mt-2 px-4 py-2 bg-[#001d3d] text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:bg-slate-800 transition-all">
+        Retry
+      </button>
     </div>
   );
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8 antialiased">
-      
-      {/* HEADER SECTION */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-8 gap-4 print:hidden">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-             <span className="bg-[#001d3d] text-white px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest">Data Stream</span>
-             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">Live Submission Logs</span>
-          </div>
-          <h1 className="text-3xl font-black tracking-tighter text-slate-900 uppercase italic flex items-center gap-3">
-            <div className="w-2 h-8 bg-blue-600 rounded-full"></div>
-            {user.role === 'manager' ? `${user.plant_name} Submissions` : 'Survey Feed'}
-          </h1>
-          <p className="text-[10px] font-bold text-blue-600/60 uppercase tracking-widest mt-1">
-            {user.role === 'manager' && "Monitoring all offices under your jurisdiction"}
-            {user.role === 'office' && !user.is_auditor_enabled && `Restricted to ${user.office_name}`}
-            {(user.role === 'super_admin' || user.role === 'admin' || user.is_auditor_enabled == 1) && "Global System Oversight Access"}
-          </p>
-        </div>
+    <div className="max-w-7xl mx-auto p-2 md:p-8 md:py-1 space-y-5 antialiased">
 
-        <div className="flex items-center gap-3">
-          {(user.role === 'super_admin' || user.role === 'admin' || user.role === 'manager' || user.is_auditor_enabled == 1) && (
-            <button onClick={fetchResults} className="flex items-center gap-2 bg-[#001d3d] hover:bg-blue-800 px-5 py-3 rounded-xl text-white font-black text-[10px] uppercase tracking-widest transition-all shadow-lg active:scale-95">
-              <RotateCcw size={14} /> Refresh ({data.length})
-            </button>
-          )}
-        </div>
-      </header>
+      {/* HEADER SECTION */}
+      <div className="max-w-5xl mx-auto mb-6">
+        <header className="flex items-center gap-6 pb-3 border-b border-[#E2E8F0] print:hidden">
+          <div className="shrink-0">
+            <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-[0.4em] leading-none mb-1">Page</p>
+            <h1 className="text-xl font-black text-slate-900 uppercase tracking-tight leading-none">
+              {user.role === 'manager' ? `${user.plant_name} Submissions` : 'Survey Feed'}
+            </h1>
+          </div>
+          <div className="ml-auto flex items-center gap-4 shrink-0">
+            {(user.role === 'super_admin' || user.role === 'admin' || user.role === 'manager' || user.is_auditor_enabled == 1) && (
+              <button onClick={fetchResults} className="flex items-center gap-2 bg-[#001d3d] hover:bg-blue-800 px-4 py-2 rounded-lg text-white font-black text-[9px] uppercase tracking-widest transition-all active:scale-95">
+                <RotateCcw size={12} /> Refresh ({data.length})
+              </button>
+            )}
+            <div className="text-right">
+              <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-[0.3em] leading-none mb-0.5">Office Context</p>
+              <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight leading-none">{user.plant_name || 'General HQ'}</p>
+            </div>
+            <div className="h-9 w-9 border border-slate-200 flex items-center justify-center text-[10px] text-slate-400 font-black italic">04</div>
+          </div>
+        </header>
+      </div>
 
       {/* CONTROLS */}
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between print:hidden">
         <div className="relative w-full max-w-md group">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-          <input 
-            type="text" 
-            placeholder="FILTER BY CLIENT, OFFICE, OR SERVICE..." 
+          <input
+            type="text"
+            placeholder="FILTER BY CLIENT, OFFICE, OR SERVICE..."
             className="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-200 rounded-2xl text-[11px] font-black uppercase tracking-tight focus:ring-2 focus:ring-blue-600 outline-none transition-all shadow-sm"
             value={searchTerm}
-            onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}}
+            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
           />
           {searchTerm && (
             <button onClick={() => setSearchTerm("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500">
@@ -184,7 +199,7 @@ const SurveyResults = () => {
           )}
         </div>
 
-        <button 
+        <button
           onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
           className="bg-white border border-slate-200 px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-3 shadow-sm active:scale-95"
         >
@@ -202,13 +217,13 @@ const SurveyResults = () => {
                 <p className="text-[9px] text-blue-400 font-black uppercase tracking-[0.2em] mb-1">{userInsights.subtitle}</p>
                 <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">{userInsights.title}</h2>
                 <div className="flex items-center gap-2 mt-2">
-                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                    <p className="text-[10px] text-blue-300 font-bold uppercase">{userInsights.totalVisits} Matches Found</p>
+                  <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                  <p className="text-[10px] text-blue-300 font-bold uppercase">{userInsights.totalVisits} Matches Found</p>
                 </div>
               </div>
-              
+
               <div className="lg:col-span-1">
-                <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-2 flex items-center gap-2"><PieChart size={12}/> Unit Reach</p>
+                <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-2 flex items-center gap-2"><PieChart size={12} /> Unit Reach</p>
                 <div className="flex flex-wrap gap-1.5">
                   {userInsights.offices.map((off, i) => (
                     <span key={i} className="bg-blue-500/20 border border-blue-400/30 px-2 py-1 rounded-lg text-[9px] font-black uppercase text-blue-100">
@@ -219,7 +234,7 @@ const SurveyResults = () => {
               </div>
 
               <div className="lg:col-span-1">
-                <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-2 flex items-center gap-2"><Layers size={12}/> Service Context</p>
+                <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest mb-2 flex items-center gap-2"><Layers size={12} /> Service Context</p>
                 <p className="text-[10px] text-blue-100/80 leading-relaxed font-bold uppercase">
                   {userInsights.services.slice(0, 3).join(" • ")}{userInsights.services.length > 3 && "..."}
                 </p>
@@ -251,14 +266,14 @@ const SurveyResults = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {currentItems.length > 0 ? currentItems.map((row, index) => {
-                const seqId = sortOrder === 'desc' 
-                  ? filteredData.length - (indexOfFirstItem + index) 
+                const seqId = sortOrder === 'desc'
+                  ? filteredData.length - (indexOfFirstItem + index)
                   : indexOfFirstItem + index + 1;
 
                 return (
-                  <tr 
-                    key={row.id} 
-                    onClick={() => setSelectedSurvey(row)} 
+                  <tr
+                    key={row.id}
+                    onClick={() => setSelectedSurvey(row)}
                     className="hover:bg-blue-50/50 cursor-pointer transition-all group border-l-4 border-transparent hover:border-blue-600"
                   >
                     <td className="px-8 py-6 font-mono text-[11px] font-black text-slate-300 group-hover:text-blue-600 transition-colors">
@@ -280,18 +295,17 @@ const SurveyResults = () => {
                       <p className="text-[9px] font-bold text-slate-400 italic truncate max-w-[200px] mt-0.5">{row.service_name}</p>
                     </td>
                     <td className="px-8 py-6 text-center">
-                      <span className={`inline-flex items-center justify-center w-12 py-1.5 rounded-xl font-black text-[11px] shadow-sm ${
-                        parseFloat(row.avg_rating) >= 4 
-                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-100' 
-                          : 'text-slate-800 bg-slate-100 border border-slate-200'
-                      }`}>
+                      <span className={`inline-flex items-center justify-center w-12 py-1.5 rounded-xl font-black text-[11px] shadow-sm ${parseFloat(row.avg_rating) >= 4
+                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-100'
+                        : 'text-slate-800 bg-slate-100 border border-slate-200'
+                        }`}>
                         {parseFloat(row.avg_rating || 0).toFixed(1)}
                       </span>
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="flex flex-col items-end">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter flex items-center gap-1.5">
-                           <Calendar size={12}/> {new Date(row.created_at).toLocaleDateString()}
+                          <Calendar size={12} /> {new Date(row.created_at).toLocaleDateString()}
                         </p>
                       </div>
                     </td>
@@ -340,89 +354,89 @@ const SurveyResults = () => {
           </div>
         </div>
       </div>
-      
+
       {/* MODAL / DETAILS VIEW (Preserved Logic) */}
       {selectedSurvey && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#001d3d]/90 backdrop-blur-md animate-in fade-in duration-300">
-           {/* Detailed view content remains similar, just styled with rounded-3xl and slate/indigo accents */}
-           <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl overflow-hidden">
-              <div className="px-10 py-8 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-                    <FileText size={24} />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter">{selectedSurvey.full_name}</h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Entry ID: {selectedSurvey.id}</p>
-                  </div>
+          {/* Detailed view content remains similar, just styled with rounded-3xl and slate/indigo accents */}
+          <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl overflow-hidden">
+            <div className="px-10 py-8 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                  <FileText size={24} />
                 </div>
-                <button onClick={() => setSelectedSurvey(null)} className="p-3 hover:bg-white rounded-full transition-all text-slate-400 hover:text-red-500 shadow-sm border border-transparent hover:border-slate-100">
-                  <X size={24} />
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 uppercase italic tracking-tighter">{selectedSurvey.full_name}</h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Entry ID: {selectedSurvey.id}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedSurvey(null)} className="p-3 hover:bg-white rounded-full transition-all text-slate-400 hover:text-red-500 shadow-sm border border-transparent hover:border-slate-100">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-10">
+              <div className="grid grid-cols-2 gap-8 mb-8">
+                <div className="space-y-1">
+                  <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Operational Office</p>
+                  <p className="text-sm font-black text-slate-800 uppercase italic">{selectedSurvey.office_name}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Service Profile</p>
+                  <p className="text-sm font-black text-slate-800 uppercase italic">{selectedSurvey.service_name}</p>
+                </div>
+              </div>
+
+              <div className="flex gap-4 pt-8 border-t border-slate-100">
+                <button onClick={handleDownload} className="flex-1 flex items-center justify-center gap-2 py-4 bg-[#001d3d] text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-800 transition-all active:scale-95 shadow-xl">
+                  <Download size={16} /> Export PDF Document
+                </button>
+                <button onClick={() => window.print()} className="flex items-center justify-center px-6 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95">
+                  <Printer size={16} />
                 </button>
               </div>
-
-              <div className="p-10">
-                <div className="grid grid-cols-2 gap-8 mb-8">
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Operational Office</p>
-                    <p className="text-sm font-black text-slate-800 uppercase italic">{selectedSurvey.office_name}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Service Profile</p>
-                    <p className="text-sm font-black text-slate-800 uppercase italic">{selectedSurvey.service_name}</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-4 pt-8 border-t border-slate-100">
-                  <button onClick={handleDownload} className="flex-1 flex items-center justify-center gap-2 py-4 bg-[#001d3d] text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-800 transition-all active:scale-95 shadow-xl">
-                    <Download size={16} /> Export PDF Document
-                  </button>
-                  <button onClick={() => window.print()} className="flex items-center justify-center px-6 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95">
-                    <Printer size={16} />
-                  </button>
-                </div>
-              </div>
-           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* FORM OVERLAY (THE FORMAL TEMPLATE) */}
       {selectedSurvey && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto print:p-0 print:bg-white">
-        
-        
-            {/* Controls */}
-            {/* FLOATING CONTROLS - Positioned fixed to the screen, not the paper */}
-              <div className="fixed top-6 right-6 flex gap-3 z-[100] no-print print:hidden">
-              {/* Direct Download Button */}
-              <button 
-                onClick={handleDownload} 
-                className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase shadow-xl hover:bg-emerald-700 active:scale-95 transition-all flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download PDF
-              </button>
 
-              {/* Existing Print Button */}
-              <button onClick={() => window.print()} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase shadow-xl hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2">
-               Print Document
+
+          {/* Controls */}
+          {/* FLOATING CONTROLS - Positioned fixed to the screen, not the paper */}
+          <div className="fixed top-6 right-6 flex gap-3 z-[100] no-print print:hidden">
+            {/* Direct Download Button */}
+            <button
+              onClick={handleDownload}
+              className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase shadow-xl hover:bg-emerald-700 active:scale-95 transition-all flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download PDF
             </button>
 
-              {/* Close Modal */}
-              <button 
-                onClick={() => setSelectedSurvey(null)} 
-                className="bg-white text-slate-700 px-6 py-3 rounded-xl font-bold text-xs uppercase shadow-xl hover:bg-slate-50 active:scale-95 transition-all border border-slate-200"
-              >
-                Close
-              </button>
-            </div>
+            {/* Existing Print Button */}
+            <button onClick={() => window.print()} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase shadow-xl hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2">
+              Print Document
+            </button>
 
-            <style>{A4_PRINT_STYLE}</style>
+            {/* Close Modal */}
+            <button
+              onClick={() => setSelectedSurvey(null)}
+              className="bg-white text-slate-700 px-6 py-3 rounded-xl font-bold text-xs uppercase shadow-xl hover:bg-slate-50 active:scale-95 transition-all border border-slate-200"
+            >
+              Close
+            </button>
+          </div>
 
-            {/* The main container */}
-            <div 
+          <style>{A4_PRINT_STYLE}</style>
+
+          {/* The main container */}
+          <div
             ref={printRef}
             className="print-container bg-white w-[210mm] min-h-[297mm] shadow-2xl p-[16mm] relative animate-in zoom-in-95 print:shadow-none print:m-0 mx-auto overflow-hidden"
             style={{
@@ -435,16 +449,16 @@ const SurveyResults = () => {
               backgroundColor: 'white'
 
             }}
-            >
-            
+          >
+
 
             {/* AGENCY HEADER  done */}
             <div className="absolute top-[5mm] left-0 right-0 flex flex-col items-center text-center">
               <div className="mb-1">
-                <img 
-                  src="/npc-new-logo.png" 
-                  alt="NPC Logo" 
-                  className="w-15 h-15 object-contain" 
+                <img
+                  src="/npc-new-logo.png"
+                  alt="NPC Logo"
+                  className="w-15 h-15 object-contain"
                 />
               </div>
               <div className="leading-tight">
@@ -460,8 +474,8 @@ const SurveyResults = () => {
             <div className="text-center mb-1 font-['Arial']">
               <h1 className="text-medium font-bold uppercase tracking-tight">Customer Satisfaction Measurement</h1>
               <p className="text-[9pt] leading-snug text-justify mx-auto max-w-[180mm]">
-                This Client Satisfaction Measurement (CSM) tracks the customer experience of government offices. 
-                Your feedback on your recently concluded transaction will help this office provide a better service. 
+                This Client Satisfaction Measurement (CSM) tracks the customer experience of government offices.
+                Your feedback on your recently concluded transaction will help this office provide a better service.
                 Personal information shared will be kept confidential and you always have the option not to answer this form.
               </p>
             </div>
@@ -473,10 +487,10 @@ const SurveyResults = () => {
                 <span className="mr-2">Customer Name/Signature:</span>
                 <span className="uppercase font-bold">{selectedSurvey.full_name}</span>
                 {selectedSurvey.signature && (
-                  <img 
-                    src={selectedSurvey.signature} 
-                    className="absolute right-4 bottom-1 h-10 object-contain" 
-                    alt="Signature" 
+                  <img
+                    src={selectedSurvey.signature}
+                    className="absolute right-4 bottom-1 h-10 object-contain"
+                    alt="Signature"
                   />
                 )}
               </div>
@@ -591,13 +605,13 @@ const SurveyResults = () => {
                       <span>{selectedSurvey.CC2 == '1' ? '☒' : '☐'}</span> 1. Easy to see
                     </div>
                     <div className="flex items-center gap-2">
-                      <span>{selectedSurvey.CC2 == '4' ? '☒' : '☐'}</span> 4. Not visible at all 
+                      <span>{selectedSurvey.CC2 == '4' ? '☒' : '☐'}</span> 4. Not visible at all
                     </div>
                     <div className="flex items-center gap-2">
                       <span>{selectedSurvey.CC2 == '2' ? '☒' : '☐'}</span> 2. Somewhat easy to see
                     </div>
                     <div className="flex items-center gap-2">
-                      <span>{selectedSurvey.CC2 == '5' ? '☒' : '☐'}</span> 5. N/A 
+                      <span>{selectedSurvey.CC2 == '5' ? '☒' : '☐'}</span> 5. N/A
                     </div>
                     <div className="flex items-center gap-2">
                       <span>{selectedSurvey.CC2 == '3' ? '☒' : '☐'}</span> 3. Difficult to see
@@ -633,9 +647,9 @@ const SurveyResults = () => {
             <div className="font-['Arial'] mb-2">
               <p className="text-[8pt] mb-1">
                 <span className="text-[9pt] font-bold">INSTRUCTIONS: </span>
-                 For SQD 0-8, please put a check mark ( ✔ ) on the column that best corresponds to your answer. 
+                For SQD 0-8, please put a check mark ( ✔ ) on the column that best corresponds to your answer.
               </p>
-              
+
               <table className="w-full border-collapse border-[0.5pt] border-black text-[7pt] leading-none">
                 <thead>
                   <tr className="text-center">
@@ -667,9 +681,9 @@ const SurveyResults = () => {
               <p className="text-[9pt]">
                 Suggestions on how we can further improve our services (optional):
               </p>
-              <div 
-                className="ml-2 text-[9pt] underline font-normal"  
-                
+              <div
+                className="ml-2 text-[9pt] underline font-normal"
+
               >
                 {selectedSurvey.suggestions || ""}
               </div>
@@ -701,14 +715,14 @@ const renderSQDRow = (question, ratingValue) => {
           {question}
         </div>
       </td>
-      
+
       {/* Rating Cells */}
       <td className={cellStyle}><div className={checkStyle}>{ratingValue == '1' ? '✔' : ''}</div></td>
       <td className={cellStyle}><div className={checkStyle}>{ratingValue == '2' ? '✔' : ''}</div></td>
       <td className={cellStyle}><div className={checkStyle}>{ratingValue == '3' ? '✔' : ''}</div></td>
       <td className={cellStyle}><div className={checkStyle}>{ratingValue == '4' ? '✔' : ''}</div></td>
       <td className={cellStyle}><div className={checkStyle}>{ratingValue == '5' ? '✔' : ''}</div></td>
-      
+
       {/* N/A Cell - Closing with border-r */}
       <td className={`${cellStyle} border-r-[0.5pt]`}>
         <div className={checkStyle}>{(ratingValue == '0' || !ratingValue) ? '✔' : ''}</div>

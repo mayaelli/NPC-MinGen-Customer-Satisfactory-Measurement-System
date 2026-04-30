@@ -13,10 +13,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit;
 }
 
-// 1. CAPTURE SESSION DATA
+// 1. RESOLVE USER IDENTITY
+// Primary: PHP session (set by login.php)
+// Fallback: user_id query param — look up role/office from DB
 $userRole     = $_SESSION['role']      ?? null;
 $userOfficeId = $_SESSION['office_id'] ?? null;
 $userPlant    = $_SESSION['plant_name'] ?? '';
+
+if (!$userRole && isset($_GET['user_id'])) {
+    $uid = intval($_GET['user_id']);
+    $uStmt = $conn->prepare("SELECT u.role, u.office_id, o.plant_name 
+                              FROM users u 
+                              LEFT JOIN offices o ON u.office_id = o.id 
+                              WHERE u.id = ? AND u.is_active = 1 LIMIT 1");
+    $uStmt->execute([$uid]);
+    $uRow = $uStmt->fetch();
+    if ($uRow) {
+        $userRole     = $uRow['role'];
+        $userOfficeId = $uRow['office_id'];
+        $userPlant    = $uRow['plant_name'] ?? '';
+    }
+}
+
+// Guard: reject if still no role resolved
+if (!$userRole) {
+    http_response_code(401);
+    echo json_encode(["status" => "error", "message" => "No active session. Please log in."]);
+    exit;
+}
 
 try {
     // 2. CHECK AUDITOR STATUS (The "Toggle" Logic)

@@ -1,11 +1,12 @@
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import JSZip from 'jszip';
+import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   FileDown, LayoutDashboard, ClipboardCheck, FileBarChart,
-  Building2, FileText, ChevronDown
+  Building2, FileText, ChevronDown, FileSpreadsheet, Archive
 } from 'lucide-react';
 import CCEvaluationTable from '../reports/CCEvaluationTable';
 import SQDEvaluationTable from '../reports/SQDEvaluationTable';
@@ -20,7 +21,7 @@ export const ReportsPage = ({ data = [], allOffices = [], user }) => {
     return uniqueIds.length > 1;
   }, [data]);
 
-  const isGlobalView = ['super_admin', 'auditor', 'admin'].includes(user.role) ||
+  const isGlobalView = ['super_admin', 'auditor', 'admin', 'provisioned'].includes(user.role) ||
     user.is_auditor === 1 || user.is_auditor === true || hadMultipleOffices;
   const isManager = user.role === 'manager';
   const isOffice = user.role === 'office' && !isGlobalView;
@@ -47,7 +48,7 @@ export const ReportsPage = ({ data = [], allOffices = [], user }) => {
   const officeAbbr = useMemo(() => {
     if (!targetOffice || targetOffice === 'All' || targetOffice === 'NPC Mindanao Generation') return 'ALL';
     const match = (Array.isArray(allOffices) ? allOffices : [])
-      .find(o => o.name?.toUpperCase() === targetOffice.toUpperCase());
+      .find(o => o.name?.toUpperCase() === (targetOffice ?? '').toUpperCase());
     return (match?.abbreviation || targetOffice).toUpperCase().replace(/\s+/g, '');
   }, [targetOffice, allOffices]);
 
@@ -179,6 +180,262 @@ export const ReportsPage = ({ data = [], allOffices = [], user }) => {
     }
   };
 
+  // ─── Excel workbook builder ────────────────────────────────────────────────
+  const buildExcelWorkbook = () => {
+    const wb = XLSX.utils.book_new();
+    const total = reportData.length;
+
+    const ratingLabel = (score) => {
+      if (score === null || score === undefined) return '—';
+      if (score >= 95) return 'Outstanding';
+      if (score >= 90) return 'Very Satisfactory';
+      if (score >= 80) return 'Satisfactory';
+      if (score >= 60) return 'Fair';
+      return 'Poor';
+    };
+
+    // Sheet 1: CC Report
+    const ccCnt = (code, val) =>
+      reportData.filter(d => Number(d[`${code.toLowerCase()}_val`] || d[code]) === Number(val)).length;
+    const ccPct = (n) => total > 0 ? `${((n / total) * 100).toFixed(0)}%` : '0%';
+
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['CSM Evaluation Sheet — Part A: CC Report'],
+      ['Office', displayOfficeName, 'Period', fullPeriodString],
+      ['Total Submissions', total],
+      [],
+      ['Question / Option', '', 'Responses', 'Percentage'],
+      ['CC1: Which best describes awareness of a CC?'],
+      ['', '1 — I know what a CC is and I saw this office\'s CC.', ccCnt('CC1', 1), ccPct(ccCnt('CC1', 1))],
+      ['', '2 — I know what a CC is but did NOT see this office\'s CC.', ccCnt('CC1', 2), ccPct(ccCnt('CC1', 2))],
+      ['', '3 — I learned of the CC only when I saw this office\'s CC.', ccCnt('CC1', 3), ccPct(ccCnt('CC1', 3))],
+      ['', '4 — I do not know what a CC is and did not see one.', ccCnt('CC1', 4), ccPct(ccCnt('CC1', 4))],
+      ['CC2: If aware of CC, was the CC...?'],
+      ['', '1 — Easy to see', ccCnt('CC2', 1), ccPct(ccCnt('CC2', 1))],
+      ['', '2 — Somewhat easy to see', ccCnt('CC2', 2), ccPct(ccCnt('CC2', 2))],
+      ['', '3 — Difficult to see', ccCnt('CC2', 3), ccPct(ccCnt('CC2', 3))],
+      ['', '4 — Not visible at all', ccCnt('CC2', 4), ccPct(ccCnt('CC2', 4))],
+      ['CC3: How much did the CC help you?'],
+      ['', '1 — Helped very much', ccCnt('CC3', 1), ccPct(ccCnt('CC3', 1))],
+      ['', '2 — Somewhat helped', ccCnt('CC3', 2), ccPct(ccCnt('CC3', 2))],
+      ['', '3 — Did not help', ccCnt('CC3', 3), ccPct(ccCnt('CC3', 3))],
+    ]), 'CC Report');
+
+    // Sheet 2: SQD Analysis
+    const sqdDims = [
+      { id: 'sqd0', label: 'SQD0 — Overall Experience' },
+      { id: 'sqd1', label: 'SQD1 — Responsiveness' },
+      { id: 'sqd2', label: 'SQD2 — Reliability' },
+      { id: 'sqd3', label: 'SQD3 — Access and Facilities' },
+      { id: 'sqd4', label: 'SQD4 — Communication' },
+      { id: 'sqd5', label: 'SQD5 — Costs' },
+      { id: 'sqd6', label: 'SQD6 — Integrity' },
+      { id: 'sqd7', label: 'SQD7 — Assurance' },
+      { id: 'sqd8', label: 'SQD8 — Outcome' },
+    ];
+    const sqdCnt = (id, rating) => reportData.filter(d => {
+      const key = `${id.toLowerCase()}_val`;
+      return Number(d[key] || d[id.toUpperCase()]) === Number(rating);
+    }).length;
+    const sqdScore = (id) => {
+      const key = `${id.toLowerCase()}_val`;
+      const valid = reportData.filter(d => {
+        const v = d[key] || d[id.toUpperCase()];
+        return v && Number(v) !== 0;
+      });
+      if (!valid.length) return 0;
+      const sum = valid.reduce((acc, d) => acc + Number(d[key] || d[id.toUpperCase()]), 0);
+      return parseFloat(((sum / valid.length / 5) * 100).toFixed(2));
+    };
+    const mainSqdDims = sqdDims.slice(1);
+    const mainSqdScores = mainSqdDims.map(d => sqdScore(d.id));
+    const overallSqdAvg = parseFloat((mainSqdScores.reduce((a, b) => a + b, 0) / 8).toFixed(2));
+
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['CSM Evaluation Sheet — Part B: SQD Analysis'],
+      ['Office', displayOfficeName, 'Period', fullPeriodString],
+      [],
+      ['Dimension', 'Strongly Agree (5)', 'Agree (4)', 'Neither (3)', 'Disagree (2)', 'Strongly Disagree (1)', 'N/A (0)', 'Total Responses', 'Overall Score (%)', 'Rating'],
+      ...sqdDims.map(dim => {
+        const score = sqdScore(dim.id);
+        const rowTotal = reportData.filter(d => d[`${dim.id}_val`] !== undefined || d[dim.id.toUpperCase()] !== undefined).length;
+        return [dim.label, sqdCnt(dim.id, 5), sqdCnt(dim.id, 4), sqdCnt(dim.id, 3), sqdCnt(dim.id, 2), sqdCnt(dim.id, 1), sqdCnt(dim.id, 0), rowTotal, score, ratingLabel(score)];
+      }),
+      [
+        'Overall (SQD1–8)',
+        mainSqdDims.reduce((a, d) => a + sqdCnt(d.id, 5), 0),
+        mainSqdDims.reduce((a, d) => a + sqdCnt(d.id, 4), 0),
+        mainSqdDims.reduce((a, d) => a + sqdCnt(d.id, 3), 0),
+        mainSqdDims.reduce((a, d) => a + sqdCnt(d.id, 2), 0),
+        mainSqdDims.reduce((a, d) => a + sqdCnt(d.id, 1), 0),
+        mainSqdDims.reduce((a, d) => a + sqdCnt(d.id, 0), 0),
+        reportData.length * 8,
+        overallSqdAvg,
+        ratingLabel(overallSqdAvg),
+      ],
+    ]), 'SQD Analysis');
+
+    // Sheet 3: CSM Tabulation
+    const tabMap = {};
+    filteredPossibleServices.forEach(s => {
+      const name = s.service_name?.toUpperCase().trim();
+      if (!name) return;
+      tabMap[name] = { service_name: name, type: (s.service_type || 'INTERNAL').toUpperCase(), responses: 0, transactions: 0 };
+    });
+    reportData.forEach(sub => {
+      const name = sub.service_name?.toUpperCase().trim();
+      if (!name) return;
+      const type = (sub.service_type || 'INTERNAL').toUpperCase();
+      if (tabMap[name]) {
+        tabMap[name].responses += 1;
+        tabMap[name].transactions += 1;
+        tabMap[name].type = type;
+      } else {
+        tabMap[name] = { service_name: name, type, responses: 1, transactions: 1 };
+      }
+    });
+    const tabServices = Object.values(tabMap);
+    const tabExt = tabServices.filter(s => s.type === 'EXTERNAL' && s.responses > 0);
+    const tabInt = tabServices.filter(s => s.type === 'INTERNAL' && s.responses > 0);
+    const tabNoClients = tabServices.filter(s => s.transactions === 0);
+    const tabTotalR = tabServices.reduce((sum, s) => sum + s.responses, 0);
+    const tabTotalT = tabServices.reduce((sum, s) => sum + s.transactions, 0);
+    const tabRows = [
+      ['CSM Tabulation — Part C'],
+      ['Office', displayOfficeName, 'Period', fullPeriodString],
+      [],
+      ['Service Name', 'Type', 'Responses', 'Total Transactions'],
+      ...tabExt.map(s => [s.service_name, 'EXTERNAL', s.responses, s.transactions]),
+      ...tabInt.map(s => [s.service_name, 'INTERNAL', s.responses, s.transactions]),
+      ['TOTAL', '', tabTotalR, tabTotalT],
+    ];
+    if (tabNoClients.length) {
+      tabRows.push([], ['Services with No Clients for Period:'], ...tabNoClients.map(s => [s.service_name, s.type, 0, 0]));
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tabRows), 'CSM Tabulation');
+
+    // Sheet 4: Score Per Service
+    const SQD_KEYS = ['SQD0', 'SQD1', 'SQD2', 'SQD3', 'SQD4', 'SQD5', 'SQD6', 'SQD7', 'SQD8'];
+    const computeAgreePct = (subs) => {
+      let agree = 0, valid = 0;
+      subs.forEach(sub => {
+        SQD_KEYS.forEach(key => {
+          const raw = sub[key] ?? sub[key.toLowerCase()] ?? sub[key.toLowerCase() + '_val'];
+          const r = parseInt(raw);
+          if (!raw || isNaN(r) || r === 0) return;
+          valid++;
+          if (r >= 4) agree++;
+        });
+      });
+      return valid > 0 ? parseFloat(((agree / valid) * 100).toFixed(2)) : null;
+    };
+    const scoreMap = {};
+    filteredPossibleServices.forEach(s => {
+      const name = s.service_name?.toUpperCase().trim();
+      if (!name) return;
+      scoreMap[name] = { service_name: name, type: (s.service_type || 'INTERNAL').toUpperCase(), subs: [] };
+    });
+    reportData.forEach(sub => {
+      const name = sub.service_name?.toUpperCase().trim() || 'UNKNOWN';
+      const type = (sub.service_type || 'INTERNAL').toUpperCase();
+      if (!scoreMap[name]) scoreMap[name] = { service_name: name, type, subs: [] };
+      scoreMap[name].subs.push(sub);
+    });
+    const scoreServices = Object.values(scoreMap).map(g => ({ ...g, respondents: g.subs.length, score: computeAgreePct(g.subs) }));
+    const scoreExt = scoreServices.filter(s => s.type === 'EXTERNAL');
+    const scoreInt = scoreServices.filter(s => s.type === 'INTERNAL');
+    const computeGroupPct = (group) => computeAgreePct(group.flatMap(g => g.subs));
+    const extGroupScore = computeGroupPct(scoreExt);
+    const intGroupScore = computeGroupPct(scoreInt);
+    const overallPct = computeAgreePct(reportData);
+
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['Score Per Service — Part D'],
+      ['Office', displayOfficeName, 'Period', fullPeriodString],
+      [],
+      ['Service Name', 'Type', 'Respondents', 'Overall Score (%)', 'Rating'],
+      ['— EXTERNAL SERVICES —'],
+      ...scoreExt.map(s => [s.service_name, 'EXTERNAL', s.respondents, s.score ?? 0, ratingLabel(s.score)]),
+      ['External Total', '', scoreExt.reduce((a, s) => a + s.respondents, 0), extGroupScore ?? 0, ratingLabel(extGroupScore)],
+      ['— INTERNAL SERVICES —'],
+      ...scoreInt.map(s => [s.service_name, 'INTERNAL', s.respondents, s.score ?? 0, ratingLabel(s.score)]),
+      ['Internal Total', '', scoreInt.reduce((a, s) => a + s.respondents, 0), intGroupScore ?? 0, ratingLabel(intGroupScore)],
+      ['Overall Total', '', reportData.length, overallPct ?? 0, ratingLabel(overallPct)],
+    ]), 'Score Per Service');
+
+    return wb;
+  };
+
+  // ─── All Reports — single multi-page PDF ───────────────────────────────────
+  const handleDownloadAllPDF = async () => {
+    setIsDownloading(true);
+    setShowDlMenu(false);
+    try {
+      const refs = [ccRef, sqdRef, tabRef, scoreRef];
+      let pdf = null;
+      for (const ref of refs) {
+        if (!ref.current) continue;
+        const canvas = await html2canvas(ref.current, {
+          scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff',
+          onclone: (clonedDoc) => {
+            const el = clonedDoc.getElementById('printable-report') || clonedDoc.getElementById('printable-tabulation');
+            if (el) el.style.colorScheme = 'light';
+          }
+        });
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        if (!pdf) {
+          pdf = new jsPDF('p', 'mm', 'a4');
+        } else {
+          pdf.addPage();
+        }
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const margin = 10;
+        const imgWidth = pageWidth - margin * 2;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight);
+      }
+      if (pdf) pdf.save(`CSM_AllReports_${officeAbbr}_${filenamePeriod}.pdf`);
+    } catch (err) {
+      console.error('All PDF Error:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // ─── Excel Workbook ────────────────────────────────────────────────────────
+  const handleDownloadExcel = () => {
+    setShowDlMenu(false);
+    const wb = buildExcelWorkbook();
+    XLSX.writeFile(wb, `CSM_Reports_${officeAbbr}_${filenamePeriod}.xlsx`);
+  };
+
+  // ─── Full Audit Bundle — Excel + all PDFs in ZIP ───────────────────────────
+  const handleDownloadBundle = async () => {
+    setIsDownloading(true);
+    setShowDlMenu(false);
+    try {
+      const zip = new JSZip();
+      const wb = buildExcelWorkbook();
+      zip.file(`CSM_Reports_${officeAbbr}_${filenamePeriod}.xlsx`, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }));
+      const refs = [
+        { key: 'cc', ref: ccRef },
+        { key: 'sqd', ref: sqdRef },
+        { key: 'csm-tab', ref: tabRef },
+        { key: 'csm-score', ref: scoreRef },
+      ];
+      for (const { key, ref } of refs) {
+        if (!ref.current) continue;
+        const pdf = await renderToPDF(ref.current);
+        zip.file(`${DOC_CODES[key]}_${officeAbbr}_${filenamePeriod}.pdf`, pdf.output('blob'));
+      }
+      saveAs(await zip.generateAsync({ type: 'blob' }), `CSM_AuditBundle_${officeAbbr}_${filenamePeriod}.zip`);
+    } catch (err) {
+      console.error('Bundle Error:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const [signatories, setSignatories] = useState(() => {
     const saved = localStorage.getItem('report_signatories');
     return saved ? JSON.parse(saved) : {
@@ -215,7 +472,7 @@ export const ReportsPage = ({ data = [], allOffices = [], user }) => {
 
     let filtered = isGlobalView && targetOffice === 'All'
       ? data
-      : data.filter(d => d.office_name?.toString().toUpperCase() === targetOffice.toUpperCase());
+      : data.filter(d => d.office_name?.toString().toUpperCase() === (targetOffice ?? '').toUpperCase());
 
     if (filterMode === 'quarter') {
       // Quarter + year filter
@@ -252,14 +509,21 @@ export const ReportsPage = ({ data = [], allOffices = [], user }) => {
     if (!allPossibleServices.length) return [];
     if (isGlobalView && targetOffice === 'All') return allPossibleServices;
     return allPossibleServices.filter(
-      s => s.office_name?.toUpperCase() === targetOffice.toUpperCase()
+      s => s.office_name?.toUpperCase() === (targetOffice ?? '').toUpperCase()
     );
   }, [allPossibleServices, targetOffice, isGlobalView]);
 
   const offices = useMemo(() => {
     const masterList = Array.isArray(allOffices) ? allOffices : [];
     const namesFromData = [...new Set(data.map(d => d.office_name?.toUpperCase()))].filter(Boolean).sort();
+
     if (isGlobalView) {
+      // Provisioned users: backend already scoped the data to their offices.
+      // Derive the dropdown from the returned data — avoids stale assigned_office_ids in localStorage.
+      if (user.role === 'provisioned') {
+        return ['All', ...namesFromData];
+      }
+      // Super-admin / global roles: show every office
       const unique = masterList.length > 0
         ? [...new Set(masterList.map(o => o.name?.toUpperCase()))].filter(Boolean).sort()
         : namesFromData;
@@ -440,19 +704,27 @@ export const ReportsPage = ({ data = [], allOffices = [], user }) => {
                 <ChevronDown size={10} />
               </button>
               {showDlMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 overflow-hidden min-w-[160px]">
-                  <button
-                    onClick={handleDownloadCurrent}
-                    className="w-full text-left px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
-                  >
-                    <FileDown size={11} className="text-blue-600" /> Current Page
+                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 overflow-hidden min-w-[220px] animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="px-3 py-2 bg-slate-50 border-b border-slate-100">
+                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Export Options</span>
+                  </div>
+                  <button onClick={handleDownloadCurrent} className="w-full text-left px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-700 hover:bg-blue-50 transition-colors flex items-center gap-2.5">
+                    <FileDown size={11} className="text-blue-500 shrink-0" />
+                    <span>Current Page <span className="text-slate-400 font-medium normal-case tracking-normal">— PDF</span></span>
                   </button>
-                  <div className="h-px bg-slate-100"></div>
-                  <button
-                    onClick={handleDownloadAll}
-                    className="w-full text-left px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
-                  >
-                    <FileDown size={11} className="text-indigo-600" /> All Pages (ZIP)
+                  <button onClick={handleDownloadAllPDF} className="w-full text-left px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-700 hover:bg-indigo-50 transition-colors flex items-center gap-2.5">
+                    <FileDown size={11} className="text-indigo-500 shrink-0" />
+                    <span>All Reports <span className="text-slate-400 font-medium normal-case tracking-normal">— PDF</span></span>
+                  </button>
+                  <div className="h-px bg-slate-100 mx-3 my-0.5"></div>
+                  <button onClick={handleDownloadExcel} className="w-full text-left px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-700 hover:bg-emerald-50 transition-colors flex items-center gap-2.5">
+                    <FileSpreadsheet size={11} className="text-emerald-500 shrink-0" />
+                    <span>Excel Workbook <span className="text-slate-400 font-medium normal-case tracking-normal">— XLSX</span></span>
+                  </button>
+                  <div className="h-px bg-slate-100 mx-3 my-0.5"></div>
+                  <button onClick={handleDownloadBundle} className="w-full text-left px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-700 hover:bg-amber-50 transition-colors flex items-center gap-2.5">
+                    <Archive size={11} className="text-amber-500 shrink-0" />
+                    <span>Audit Bundle <span className="text-slate-400 font-medium normal-case tracking-normal">— ZIP</span></span>
                   </button>
                 </div>
               )}

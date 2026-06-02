@@ -1,8 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import SignatureCanvas from 'react-signature-canvas';
 
-const SurveyForm = ({ selectedOfficeId, selectedOfficeName, selectedService, onBack, onSubmit }) => {
+const SurveyForm = ({ selectedOfficeId, selectedOfficeName, selectedService, onBack, onSubmit, onSuccess }) => {
   const sigCanvas = useRef({});
+  const pendingSubmission = useRef(null);
+  const [modal, setModal] = useState(null); // { type: 'error'|'confirm'|'submit_error', message }
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     office_id: selectedOfficeId || '',
     service_id: '',
@@ -65,15 +68,15 @@ const SurveyForm = ({ selectedOfficeId, selectedOfficeName, selectedService, onB
 
   const validateAndSubmit = () => {
     if (!formData.full_name.trim() || !formData.client_type || !formData.sex || !formData.age) {
-      alert("Please complete Section I (Name, Type, Sex, and Age).");
+      setModal({ type: 'error', message: 'Please complete Section I (Name, Type, Sex, and Age).' });
       return;
     }
     if (Object.keys(formData.ratings).length < 12) {
-      alert("Please answer all survey questions in Section II and III.");
+      setModal({ type: 'error', message: 'Please answer all survey questions in Section II and III.' });
       return;
     }
     if (!formData.signature) {
-      alert("Signature is required.");
+      setModal({ type: 'error', message: 'Signature is required before submitting.' });
       return;
     }
 
@@ -96,8 +99,28 @@ const SurveyForm = ({ selectedOfficeId, selectedOfficeName, selectedService, onB
 
     const officeName = selectedOfficeName || 'the office';
     const serviceName = selectedService || formData.serviceAvailed || 'the selected service';
-    alert(`Your feedback for "${serviceName}" has been successfully submitted to ${officeName}. Thank you for your time!`);
-    onSubmit(finalSubmission);
+    pendingSubmission.current = finalSubmission;
+    setModal({
+      type: 'confirm',
+      message: `You are about to submit your feedback for "${serviceName}" at ${officeName}. Please review your answers before confirming.`,
+    });
+  };
+
+  const executeSubmit = async () => {
+    setModal(null);
+    setIsSubmitting(true);
+    try {
+      const result = await onSubmit(pendingSubmission.current);
+      if (result?.success) {
+        setModal({ type: 'thank_you' });
+      } else {
+        setModal({ type: 'submit_error', message: result?.message || 'Something went wrong. Please try again.' });
+      }
+    } catch {
+      setModal({ type: 'submit_error', message: 'An unexpected error occurred. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const inputClass = "w-full p-3 bg-slate-50 border border-slate-200 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500/30 transition-all";
@@ -411,11 +434,134 @@ const SurveyForm = ({ selectedOfficeId, selectedOfficeName, selectedService, onB
         <button
           type="button"
           onClick={validateAndSubmit}
-          className="w-full py-4 bg-[#002855] text-white font-black text-sm uppercase tracking-[0.2em] rounded shadow-lg hover:bg-[#003a7a] transition-all active:scale-[0.98]"
+          disabled={isSubmitting}
+          className="w-full py-4 bg-[#002855] text-white font-black text-sm uppercase tracking-[0.2em] rounded shadow-lg hover:bg-[#003a7a] transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-3"
         >
-          Submit Final Feedback
+          {isSubmitting ? (
+            <>
+              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Submitting...
+            </>
+          ) : 'Submit Final Feedback'}
         </button>
       </div>
+
+      {/* Modals */}
+      {modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+
+          {/* Validation error */}
+          {modal.type === 'error' && (
+            <div className="bg-white rounded shadow-2xl w-full max-w-sm overflow-hidden">
+              <div className="px-6 py-4 bg-red-600 flex items-start justify-between">
+                <div>
+                  <p className="text-[10px] font-black text-white/60 uppercase tracking-widest">Incomplete Form</p>
+                  <h2 className="text-sm font-black text-white mt-1 uppercase tracking-tight">Action Required</h2>
+                </div>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-sm text-slate-600 leading-relaxed">{modal.message}</p>
+              </div>
+              <div className="px-6 pb-5">
+                <button onClick={() => setModal(null)} className="w-full py-3 font-black text-[11px] uppercase tracking-widest text-white rounded bg-red-600 hover:bg-red-700 transition-all">
+                  Okay, Got It
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Confirm before submitting */}
+          {modal.type === 'confirm' && (
+            <div className="bg-white rounded shadow-2xl w-full max-w-sm overflow-hidden">
+              <div className="px-6 py-4 bg-[#002855] flex items-start justify-between">
+                <div>
+                  <p className="text-[10px] font-black text-white/60 uppercase tracking-widest">Ready to Submit</p>
+                  <h2 className="text-sm font-black text-white mt-1 uppercase tracking-tight">Confirm Submission</h2>
+                </div>
+                <button onClick={() => setModal(null)} className="text-white/50 hover:text-white text-lg leading-none ml-4 mt-0.5 transition-colors">✕</button>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-sm text-slate-600 leading-relaxed">{modal.message}</p>
+                <p className="text-[11px] text-slate-400 mt-2">Close this dialog to go back and make changes.</p>
+              </div>
+              <div className="px-6 pb-5 flex gap-3">
+                <button onClick={() => setModal(null)} className="flex-1 py-3 font-black text-[11px] uppercase tracking-widest text-slate-500 rounded border border-slate-200 hover:bg-slate-50 transition-all">
+                  Go Back
+                </button>
+                <button onClick={executeSubmit} className="flex-1 py-3 font-black text-[11px] uppercase tracking-widest text-white rounded bg-[#002855] hover:bg-[#003a7a] transition-all">
+                  Yes, Submit
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Thank you — submission successful */}
+          {modal.type === 'thank_you' && (
+            <div className="bg-white rounded shadow-2xl w-full max-w-sm overflow-hidden">
+              <div className="px-6 pt-8 pb-4 flex flex-col items-center text-center">
+                {/* Checkmark illustration */}
+                <svg viewBox="0 0 96 96" className="w-24 h-24 mb-4" fill="none">
+                  <circle cx="48" cy="48" r="44" fill="#F0FDF4" />
+                  <circle cx="48" cy="48" r="32" fill="#DCFCE7" />
+                  <path d="M32 48 L43 59 L64 37" stroke="#16A34A" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">Thank You!</h2>
+                <p className="text-sm text-slate-500 mt-2 leading-relaxed max-w-xs">
+                  Your feedback has been successfully recorded. Your response helps us improve our services for everyone.
+                </p>
+                <div className="mt-4 px-4 py-3 bg-green-50 border border-green-100 rounded-lg w-full text-left space-y-0.5">
+                  <p className="text-[10px] font-black text-green-700 uppercase tracking-widest">Submitted To</p>
+                  <p className="text-xs font-bold text-slate-700">{selectedOfficeName || 'NPC Mindanao Generation'}</p>
+                  <p className="text-[11px] text-slate-400 italic">{selectedService || formData.serviceAvailed || '—'}</p>
+                </div>
+              </div>
+              <div className="px-6 pb-6 mt-2">
+                <button
+                  onClick={() => onSuccess?.()}
+                  className="w-full py-3 font-black text-[11px] uppercase tracking-widest text-white rounded bg-[#002855] hover:bg-[#003a7a] transition-all active:scale-[0.98]"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Submission failed — friendly error */}
+          {modal.type === 'submit_error' && (
+            <div className="bg-white rounded shadow-2xl w-full max-w-sm overflow-hidden">
+              <div className="px-6 pt-8 pb-4 flex flex-col items-center text-center">
+                {/* Illustration */}
+                <svg viewBox="0 0 96 96" className="w-24 h-24 mb-4" fill="none">
+                  <circle cx="48" cy="48" r="44" fill="#FEF2F2" />
+                  <path d="M30 38 Q48 22 66 38" stroke="#FECACA" strokeWidth="3" fill="none" strokeLinecap="round" />
+                  <rect x="28" y="36" width="40" height="28" rx="6" fill="#FCA5A5" />
+                  <rect x="34" y="42" width="28" height="16" rx="3" fill="#FEF2F2" />
+                  <line x1="40" y1="48" x2="56" y2="48" stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" />
+                  <line x1="48" y1="44" x2="48" y2="52" stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" />
+                  <circle cx="48" cy="72" r="3" fill="#FCA5A5" />
+                  <line x1="48" y1="66" x2="48" y2="58" stroke="#FCA5A5" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+                <h2 className="text-base font-black text-slate-800 uppercase tracking-tight">Submission Failed</h2>
+                <p className="text-[11px] text-slate-500 mt-2 leading-relaxed max-w-xs">
+                  {modal.message}
+                </p>
+              </div>
+              <div className="px-6 pb-6 flex gap-3 mt-2">
+                <button onClick={() => setModal(null)} className="flex-1 py-3 font-black text-[11px] uppercase tracking-widest text-slate-500 rounded border border-slate-200 hover:bg-slate-50 transition-all">
+                  Review Form
+                </button>
+                <button onClick={executeSubmit} className="flex-1 py-3 font-black text-[11px] uppercase tracking-widest text-white rounded bg-[#002855] hover:bg-[#003a7a] transition-all">
+                  Try Again
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
     </div>
   );
 };

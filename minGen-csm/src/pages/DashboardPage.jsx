@@ -66,9 +66,13 @@ function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if ((await response.json()).status === 'success') navigate('/');
-    } catch (error) {
-      alert("Submission Error.");
+      const result = await response.json();
+      if (result.status === 'success') {
+        return { success: true };
+      }
+      return { success: false, message: result.message || 'The server rejected the submission. Please try again.' };
+    } catch {
+      return { success: false, message: 'Could not reach the server. Please check your connection and try again.' };
     }
   };
 
@@ -193,6 +197,7 @@ function DashboardPage() {
                   artaServicesForOffice={servicesByOffice[selectedOffice.id.toString()]}
                   onBack={() => setStep(2)}
                   onSubmit={handleSurveySubmit}
+                  onSuccess={() => navigate('/')}
                 />
               </div>
             </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Building2, Search, Plus, ChevronDown, ChevronRight, Copy, RefreshCw, Trash2, ShieldCheck, UserCircle2, X, CheckCircle2, Lock, Globe } from 'lucide-react';
+import { Building2, Search, Plus, ChevronDown, ChevronRight, Copy, RefreshCw, Trash2, ShieldCheck, UserCircle2, X, CheckCircle2, Lock, Globe, AlertCircle } from 'lucide-react';
 
 const OfficeManagement = () => {
   const [offices, setOffices] = useState([]);
@@ -10,6 +10,18 @@ const OfficeManagement = () => {
   const [selectedOffice, setSelectedOffice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [copyStatus, setCopyStatus] = useState(null);
+  const [formNotif, setFormNotif] = useState(null); // { type: 'success'|'error', message: '' }
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [resetModal, setResetModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const isDuplicateName = useMemo(() => {
+    if (!newOffice.name.trim() || !newOffice.plant_name.trim()) return false;
+    return offices.some(o =>
+      o.name.toLowerCase().trim() === newOffice.name.toLowerCase().trim() &&
+      o.plant_name.toLowerCase().trim() === newOffice.plant_name.toLowerCase().trim()
+    );
+  }, [newOffice.name, newOffice.plant_name, offices]);
 
 
   const API_URL = 'http://localhost/MinGen%20CSM/mingen-api/survey/manage_offices.php';
@@ -30,7 +42,9 @@ const OfficeManagement = () => {
 
   const handleAddOffice = async (e) => {
     e.preventDefault();
+    if (isDuplicateName) return;
     setLoading(true);
+    setFormNotif(null);
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -39,15 +53,15 @@ const OfficeManagement = () => {
       });
       const result = await response.json();
       if (result.status === 'success') {
-        alert(result.message || "Office and User Account successfully created!");
+        setFormNotif({ type: 'success', message: result.message || "Office and user account successfully created." });
         setNewOffice({ name: '', abbreviation: '', plant_name: '', description: '', parent_id: '' });
         fetchOffices();
       } else {
-        alert("Registration failed: " + result.message);
+        setFormNotif({ type: 'error', message: result.message || "Registration failed." });
       }
     } catch (err) {
       console.error("Add Office error:", err);
-      alert("System error: Could not reach the server.");
+      setFormNotif({ type: 'error', message: "System error: could not reach the server." });
     } finally {
       setLoading(false);
     }
@@ -82,46 +96,50 @@ const OfficeManagement = () => {
     setTimeout(() => setCopyStatus(null), 2000);
   };
 
-  const handleResetPassword = async (officeId) => {
-    if (window.confirm("Generate a new random password for this account?")) {
-      try {
-        const response = await fetch(API_URL, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: officeId,
-            reset_password: true,
-            plant_name: selectedOffice.plant_name,
-            name: selectedOffice.name,
-            abbreviation: selectedOffice.abbreviation
-          }),
-        });
-        const result = await response.json();
-        if (result.status === 'success') {
-          alert(result.message);
-          fetchOffices();
-          setSelectedOffice(null);
-        }
-      } catch (err) { alert("Failed to reset password."); }
+  const confirmResetPassword = async () => {
+    setActionLoading(true);
+    try {
+      const response = await fetch(API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedOffice.id,
+          reset_password: true,
+          plant_name: selectedOffice.plant_name,
+          name: selectedOffice.name,
+          abbreviation: selectedOffice.abbreviation
+        }),
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setResetModal(false);
+        fetchOffices();
+        // Refresh selectedOffice credentials from updated list
+        setSelectedOffice(prev => ({ ...prev, _resetMsg: result.message }));
+      }
+    } catch (err) {
+      console.error("Reset password error:", err);
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm("This will also remove all associated users and services. Proceed?")) {
-      try {
-        const response = await fetch(`${API_URL}?id=${id}`, { method: 'DELETE' });
-        const result = await response.json();
-        if (result.status === 'success') {
-          alert("Office and associated records successfully deleted.");
-          setSelectedOffice(null);
-          fetchOffices();
-        } else {
-          alert("Delete failed: " + (result.message || "Unknown error"));
-        }
-      } catch (error) {
-        console.error("Error deleting office:", error);
-        alert("System error: Could not connect to the server.");
+  const confirmDelete = async () => {
+    setActionLoading(true);
+    try {
+      const response = await fetch(`${API_URL}?id=${selectedOffice.id}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setDeleteModal(false);
+        setSelectedOffice(null);
+        fetchOffices();
+      } else {
+        console.error("Delete failed:", result.message);
       }
+    } catch (error) {
+      console.error("Error deleting office:", error);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -246,17 +264,47 @@ const OfficeManagement = () => {
         </div>
 
         <form onSubmit={handleAddOffice} className="px-5 py-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-x-6 gap-y-3">
+
+          {/* Inline notification banner */}
+          {formNotif && (
+            <div className={`col-span-full flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-bold border animate-in fade-in duration-200 ${
+              formNotif.type === 'success'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-red-50 text-red-700 border-red-200'
+            }`}>
+              {formNotif.type === 'success' ? <CheckCircle2 size={12} className="shrink-0" /> : <AlertCircle size={12} className="shrink-0" />}
+              <span className="flex-1">{formNotif.message}</span>
+              <button type="button" onClick={() => setFormNotif(null)} className="p-0.5 hover:opacity-60 transition-opacity"><X size={11} /></button>
+            </div>
+          )}
+
           <div className="space-y-1">
             <label className="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-1"><Globe size={9} /> Plant Location</label>
-            <input type="text" list="plant-list" className="w-full pb-1.5 bg-transparent border-0 border-b border-slate-300 focus:border-blue-500 text-[11px] font-black outline-none transition-colors placeholder:text-slate-300" value={newOffice.plant_name} onChange={(e) => setNewOffice({ ...newOffice, plant_name: e.target.value.toUpperCase() })} required />
+            <input type="text" list="plant-list" className="w-full pb-1.5 bg-transparent border-0 border-b border-slate-300 focus:border-blue-500 text-[11px] font-black outline-none transition-colors placeholder:text-slate-300" value={newOffice.plant_name} onChange={(e) => { setNewOffice({ ...newOffice, plant_name: e.target.value.toUpperCase() }); setFormNotif(null); }} required />
             <datalist id="plant-list">
               {[...new Set(offices.map(o => o.plant_name))].map(d => <option key={d} value={d} />)}
             </datalist>
           </div>
+
           <div className="lg:col-span-1 space-y-1">
             <label className="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-1"><Building2 size={9} /> Office Designation</label>
-            <input type="text" className="w-full pb-1.5 bg-transparent border-0 border-b border-slate-300 focus:border-blue-500 text-[11px] font-black outline-none transition-colors placeholder:text-slate-300" value={newOffice.name} onChange={(e) => setNewOffice({ ...newOffice, name: e.target.value })} required />
+            <input
+              type="text"
+              className={`w-full pb-1.5 bg-transparent border-0 border-b text-[11px] font-black outline-none transition-colors placeholder:text-slate-300 ${
+                isDuplicateName ? 'border-amber-400 focus:border-amber-500' : 'border-slate-300 focus:border-blue-500'
+              }`}
+              value={newOffice.name}
+              onChange={(e) => { setNewOffice({ ...newOffice, name: e.target.value }); setFormNotif(null); }}
+              required
+            />
+            {isDuplicateName && (
+              <p className="flex items-center gap-1 text-[9px] font-bold text-amber-600 animate-in fade-in duration-150">
+                <AlertCircle size={9} className="shrink-0" />
+                Already exists under {newOffice.plant_name}.
+              </p>
+            )}
           </div>
+
           <div className="space-y-1">
             <label className="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-1"><Lock size={9} /> Abbreviation</label>
             <input type="text" className="w-full pb-1.5 bg-transparent border-0 border-b border-slate-300 focus:border-blue-500 text-[11px] font-black uppercase outline-none transition-colors placeholder:text-slate-300" value={newOffice.abbreviation} onChange={(e) => setNewOffice({ ...newOffice, abbreviation: e.target.value.toUpperCase() })} required />
@@ -271,7 +319,11 @@ const OfficeManagement = () => {
             </select>
           </div>
           <div className="flex items-end pb-1">
-            <button disabled={loading} className="w-full py-2 bg-[#001d3d] hover:bg-slate-800 text-white text-[9px] font-black uppercase tracking-widest rounded-lg transition-all active:scale-95 disabled:opacity-40">
+            <button
+              disabled={loading || isDuplicateName}
+              title={isDuplicateName ? 'Resolve the duplicate name before registering' : ''}
+              className="w-full py-2 bg-[#001d3d] hover:bg-slate-800 text-white text-[9px] font-black uppercase tracking-widest rounded-lg transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
               {loading ? 'Syncing...' : 'Register'}
             </button>
           </div>
@@ -420,19 +472,90 @@ const OfficeManagement = () => {
                 </button>
 
                 <button
-                  onClick={() => handleResetPassword(selectedOffice.id)}
+                  onClick={() => setResetModal(true)}
                   className="flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
                 >
                   <RefreshCw size={14} /> Reset Pass
                 </button>
 
                 <button
-                  onClick={() => handleDelete(selectedOffice.id)}
+                  onClick={() => setDeleteModal(true)}
                   className="flex items-center justify-center gap-2 py-3 bg-red-50 text-red-600 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-red-100 transition-all active:scale-95 border border-red-100"
                 >
                   <Trash2 size={14} /> Wipe Record
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteModal && selectedOffice && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center">
+                  <Trash2 size={16} className="text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-[13px] font-black text-slate-800 uppercase tracking-tight">Wipe Record</h2>
+                  <p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Destructive action</p>
+                </div>
+              </div>
+              <button onClick={() => setDeleteModal(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                <X size={15} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-[12px] text-slate-500 leading-relaxed">You are about to permanently delete this office and all associated records:</p>
+              <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 space-y-0.5">
+                <p className="text-[12px] font-black text-red-800 uppercase">{selectedOffice.name}</p>
+                <p className="text-[10px] text-red-400 font-medium uppercase tracking-widest">{selectedOffice.plant_name} — {selectedOffice.abbreviation}</p>
+              </div>
+              <p className="text-[10px] text-slate-400 italic">This includes all linked user accounts and survey services. This cannot be undone.</p>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button onClick={() => setDeleteModal(false)} disabled={actionLoading} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all disabled:opacity-50">Cancel</button>
+              <button onClick={confirmDelete} disabled={actionLoading} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5">
+                <Trash2 size={11} /> {actionLoading ? 'Deleting...' : 'Wipe Permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESET PASSWORD CONFIRMATION MODAL */}
+      {resetModal && selectedOffice && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                  <RefreshCw size={15} className="text-amber-600" />
+                </div>
+                <div>
+                  <h2 className="text-[13px] font-black text-slate-800 uppercase tracking-tight">Reset Password</h2>
+                  <p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Generate new credentials</p>
+                </div>
+              </div>
+              <button onClick={() => setResetModal(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                <X size={15} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-[12px] text-slate-500 leading-relaxed">A new random password will be generated for:</p>
+              <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 space-y-0.5">
+                <p className="text-[12px] font-black text-amber-800 uppercase">{selectedOffice.name}</p>
+                <p className="text-[10px] text-amber-500 font-mono tracking-widest">{selectedOffice.username || '—'}</p>
+              </div>
+              <p className="text-[10px] text-slate-400 italic">The current password will be invalidated immediately. Copy the new credentials from the terminal after resetting.</p>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button onClick={() => setResetModal(false)} disabled={actionLoading} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all disabled:opacity-50">Cancel</button>
+              <button onClick={confirmResetPassword} disabled={actionLoading} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5">
+                <RefreshCw size={11} /> {actionLoading ? 'Resetting...' : 'Reset Password'}
+              </button>
             </div>
           </div>
         </div>

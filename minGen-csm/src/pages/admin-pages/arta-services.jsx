@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { canCRUDServices } from '../../utils/permissions';
 import {
-  Plus, Trash2, Edit3, Check, X, Building2,
-  Search, ChevronRight, ShieldCheck, Save, Info
+  Plus, Trash2, Edit3, X, Building2,
+  Search, ChevronRight, Save, CheckCircle2, AlertCircle
 } from 'lucide-react';
 
 const ArtaServices = () => {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const role = user.role;
-  const canCRUD = canCRUDServices(role);
+  const userPerms = user.permissions || [];
+  const isProvisioned = role === 'provisioned';
+
+  // Provisioned users get CRUD if they have any services_* permission
+  const canCRUD = canCRUDServices(role) ||
+    (isProvisioned && userPerms.some(p => p.startsWith('services_')));
 
   const [services, setServices] = useState([]);
   const [offices, setOffices] = useState([]);
@@ -19,6 +24,10 @@ const ArtaServices = () => {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ show: false, service: null });
+  const [editModal, setEditModal] = useState({ show: false, service: null });
+  const [addNotif, setAddNotif] = useState(null); // inline form validation message
+  const [resultModal, setResultModal] = useState(null); // { type: 'success'|'error', title, message, meta? }
 
   const API_SERVICES = 'http://localhost/MinGen%20CSM/minGen-api/survey/manage_services.php';
   const API_OFFICES = 'http://localhost/MinGen%20CSM/minGen-api/survey/manage_offices.php';
@@ -42,22 +51,20 @@ const ArtaServices = () => {
   const handleAdd = async (e) => {
     e.preventDefault();
 
-    // 1. Strict Validation
     if (!newService.service_name.trim() || !newService.service_description.trim()) {
-      alert("Both Service Name and Description are required.");
+      setAddNotif('Both Service Name and Description are required.');
       return;
     }
 
-    // 2. Build Payload
-    // We determine the office_id based on who is logged in
     const payload = {
       office_id: role === 'office' ? user.office_id : newService.office_id,
       service_name: newService.service_name,
-      service_type: newService.service_type, // This captures your 'EXTERNAL' selection
+      service_type: newService.service_type,
       service_description: newService.service_description
     };
 
     setLoading(true);
+    setAddNotif(null);
 
     try {
       const response = await fetch(API_SERVICES, {
@@ -70,52 +77,60 @@ const ArtaServices = () => {
       const result = await response.json();
 
       if (result.status === 'success') {
-        // --- SUCCESS ALERT ---
-        alert(`✅ Success: "${payload.service_name}" has been added as an ${payload.service_type} service.`);
-
-        // 3. Reset Form
-        // Note: We keep the office_id if the user is a super_admin/admin to make multi-adding easier
+        setResultModal({
+          type: 'success',
+          title: 'Service Added',
+          message: `"${payload.service_name}" has been registered as an ${payload.service_type} service.`,
+          meta: { name: payload.service_name, type: payload.service_type }
+        });
         setNewService({
           office_id: role === 'office' ? '' : newService.office_id,
           service_name: '',
-          service_type: 'INTERNAL', // Returns to default after success
+          service_type: 'INTERNAL',
           service_description: ''
         });
-
-        // 4. Refresh List
         fetchData();
       } else {
-        alert("Error: " + (result.message || "Failed to add service."));
+        setResultModal({
+          type: 'error',
+          title: 'Registration Failed',
+          message: result.message || 'Failed to add service. Please try again.'
+        });
       }
 
     } catch (error) {
       console.error("Add failed:", error);
-      alert("Server error. Please check your connection.");
+      setResultModal({
+        type: 'error',
+        title: 'Server Error',
+        message: 'Could not reach the server. Please check your connection.'
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Delete this service permanently?")) {
-      const res = await fetch(`${API_SERVICES}?id=${id}`, { method: 'DELETE', credentials: 'include' });
-      const result = await res.json();
-      if (result.status === 'success') fetchData();
-    }
+  const handleDelete = (service) => {
+    setDeleteModal({ show: true, service });
+  };
+
+  const confirmDelete = async () => {
+    const { service } = deleteModal;
+    setDeleteModal({ show: false, service: null });
+    const res = await fetch(`${API_SERVICES}?id=${service.id}`, { method: 'DELETE', credentials: 'include' });
+    const result = await res.json();
+    if (result.status === 'success') fetchData();
   };
 
   const handleUpdate = async (id) => {
-    if (!editData.service_name.trim() || !editData.service_description.trim()) {
-      alert("Fields cannot be empty.");
-      return;
-    }
-
+    if (!editData.service_name.trim() || !editData.service_description.trim()) return;
     await fetch(API_SERVICES, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ id, ...editData })
     });
+    setEditModal({ show: false, service: null });
     setEditingId(null);
     fetchData();
   };
@@ -126,9 +141,15 @@ const ArtaServices = () => {
     // 1. Apply Search Filter (Common to all roles)
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
+      // Build a lookup of office_id → abbreviation for abbreviation-based search
+      const abbrByOfficeId = Object.fromEntries(
+        offices.map(o => [String(o.id), (o.abbreviation || '').toLowerCase()])
+      );
       filtered = filtered.filter(s =>
         s.service_name.toLowerCase().includes(term) ||
-        (s.office_name && s.office_name.toLowerCase().includes(term))
+        (s.office_name && s.office_name.toLowerCase().includes(term)) ||
+        (s.service_description && s.service_description.toLowerCase().includes(term)) ||
+        (abbrByOfficeId[String(s.office_id)] || '').includes(term)
       );
     }
 
@@ -151,6 +172,14 @@ const ArtaServices = () => {
       return filtered.filter(s =>
         String(s.office_id) === String(user.office_id)
       );
+    }
+
+    // PROVISIONED: Backend already applies WHERE office_id IN (assigned offices) so
+    // whatever came back is already correctly scoped. Just return filtered as-is.
+    // Double-filtering here against localStorage assigned_office_ids breaks when that
+    // field is stale or missing (logged in before login.php returned it).
+    if (isProvisioned) {
+      return filtered;
     }
 
     // Fallback: Default to empty for unauthorized or undefined roles
@@ -198,8 +227,8 @@ const ArtaServices = () => {
                 <div className="p-2 border-b border-slate-100">
                   <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-2">Department Nodes</span>
                 </div>
-                {offices.filter(o => o.name.toLowerCase().includes(searchTerm.toLowerCase())).length > 0 ? (
-                  offices.filter(o => o.name.toLowerCase().includes(searchTerm.toLowerCase())).map((off) => (
+                {offices.filter(o => o.name.toLowerCase().includes(searchTerm.toLowerCase()) || (o.abbreviation || '').toLowerCase().includes(searchTerm.toLowerCase())).length > 0 ? (
+                  offices.filter(o => o.name.toLowerCase().includes(searchTerm.toLowerCase()) || (o.abbreviation || '').toLowerCase().includes(searchTerm.toLowerCase())).map((off) => (
                     <button key={off.id} onClick={() => handleSelectOffice(off.name)} className="w-full text-left p-3 hover:bg-blue-50 border-b border-slate-50 last:border-0 transition-all group/item flex justify-between items-center">
                       <div>
                         <p className="text-[10px] font-black text-slate-800 uppercase group-hover/item:text-blue-600 transition-colors">{off.name}</p>
@@ -261,6 +290,19 @@ const ArtaServices = () => {
                       {offices.filter(o => o.plant_name === selectedPlant).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
                     </select>
                   </div>
+                ) : isProvisioned ? (
+                  // Provisioned users pick from their assigned offices
+                  <select
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded text-[10px] font-bold outline-none focus:border-blue-500 uppercase transition-all"
+                    value={newService.office_id}
+                    onChange={(e) => setNewService({ ...newService, office_id: e.target.value })}
+                    required
+                  >
+                    <option value="">-- SELECT OFFICE --</option>
+                    {(user.assigned_offices || []).map(o => (
+                      <option key={o.office_id} value={o.office_id}>{o.office_name}</option>
+                    ))}
+                  </select>
                 ) : (
                   <div className="p-3 bg-blue-50/50 border border-blue-100 rounded flex items-center gap-2">
                     <Building2 className="text-blue-600" size={14} />
@@ -312,6 +354,14 @@ const ArtaServices = () => {
               </div>
             </div>
 
+            {addNotif && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-[10px] font-bold text-red-700 animate-in fade-in duration-150">
+                <AlertCircle size={11} className="shrink-0" />
+                <span className="flex-1">{addNotif}</span>
+                <button type="button" onClick={() => setAddNotif(null)} className="p-0.5 hover:opacity-60"><X size={10} /></button>
+              </div>
+            )}
+
             <div className="pt-2 flex justify-between items-center border-t border-slate-200">
               <p className="text-[8px] text-slate-400 italic">Fields marked * are mandatory for ARTA compliance.</p>
               <button
@@ -356,32 +406,20 @@ const ArtaServices = () => {
 
                   <div className="p-2 pt-0 space-y-1 bg-slate-50/30">
                     {srvs.map((s) => {
-                      const canEdit = role === 'super_admin' ||
+                      // For provisioned users: if the row is visible it was already scoped
+                      // by the backend, so it's in-scope by definition. This avoids breaking
+                      // when assigned_office_ids in localStorage is stale or missing.
+                      const inScope =
+                        role === 'super_admin' ||
                         (role === 'manager' && String(s.plant_name).toLowerCase() === String(user.plant_name).toLowerCase()) ||
-                        (role === 'office' && String(s.office_id) === String(user.office_id));
+                        (role === 'office' && String(s.office_id) === String(user.office_id)) ||
+                        isProvisioned;
+
+                      const canEdit   = inScope && (role !== 'provisioned' || userPerms.includes('services_edit'));
+                      const canDelete = inScope && (role !== 'provisioned' || userPerms.includes('services_delete'));
 
                       return (
                         <div key={s.id} className="bg-white border border-slate-100 rounded-md p-2 hover:shadow-sm transition-all">
-                          {editingId === s.id ? (
-                            /* EDIT MODE - Compact */
-                            <div className="space-y-2 p-2 bg-blue-50/50 rounded-md border border-blue-100 animate-in fade-in duration-300">
-                              <input
-                                className="w-full bg-white border border-blue-300 rounded px-2 py-1 text-[11px] font-bold uppercase outline-none"
-                                value={editData.service_name}
-                                onChange={e => setEditData({ ...editData, service_name: e.target.value })}
-                              />
-                              <textarea
-                                className="w-full bg-white border border-blue-300 rounded px-2 py-1 text-[10px] uppercase outline-none min-h-[60px]"
-                                value={editData.service_description}
-                                onChange={e => setEditData({ ...editData, service_description: e.target.value })}
-                              />
-                              <div className="flex justify-end gap-2">
-                                <button onClick={() => handleUpdate(s.id)} className="px-3 py-1 bg-emerald-600 text-white rounded text-[10px] font-bold uppercase">Save</button>
-                                <button onClick={() => setEditingId(null)} className="px-3 py-1 bg-slate-200 text-slate-600 rounded text-[10px] font-bold uppercase">Cancel</button>
-                              </div>
-                            </div>
-                          ) : (
-                            /* VIEW MODE - Slim Row */
                             <div className="flex items-center justify-between gap-4">
                               <div className="flex items-center gap-3 overflow-hidden">
                                 <span className={`shrink-0 px-1.5 py-0.5 rounded text-[7px] font-black border ${s.service_type === 'EXTERNAL'
@@ -396,24 +434,27 @@ const ArtaServices = () => {
                                 </div>
                               </div>
 
-                              {canEdit && (
+                              {(canEdit || canDelete) && (
                                 <div className="flex gap-1 shrink-0">
-                                  <button
-                                    onClick={() => { setEditingId(s.id); setEditData({ service_name: s.service_name, service_description: s.service_description || '' }); }}
-                                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                  >
-                                    <Edit3 size={12} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDelete(s.id)}
-                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
+                                  {canEdit && (
+                                    <button
+                                      onClick={() => { setEditModal({ show: true, service: s }); setEditData({ service_name: s.service_name, service_type: s.service_type || 'INTERNAL', service_description: s.service_description || '' }); }}
+                                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                    >
+                                      <Edit3 size={12} />
+                                    </button>
+                                  )}
+                                  {canDelete && (
+                                    <button
+                                      onClick={() => handleDelete(s)}
+                                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
-                          )}
                         </div>
                       );
                     })}
@@ -424,6 +465,141 @@ const ArtaServices = () => {
           </div>
         ))}
       </div>
+      {/* ADD SERVICE RESULT MODAL */}
+      {resultModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className={`flex items-center gap-3 px-6 py-4 ${resultModal.type === 'success' ? 'bg-emerald-50 border-b border-emerald-100' : 'bg-red-50 border-b border-red-100'}`}>
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center ${resultModal.type === 'success' ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                {resultModal.type === 'success'
+                  ? <CheckCircle2 size={18} className="text-emerald-600" />
+                  : <AlertCircle size={18} className="text-red-600" />}
+              </div>
+              <div className="flex-1">
+                <h2 className={`text-[13px] font-black uppercase tracking-tight ${resultModal.type === 'success' ? 'text-emerald-800' : 'text-red-800'}`}>{resultModal.title}</h2>
+              </div>
+              <button onClick={() => setResultModal(null)} className="p-1 hover:bg-black/5 rounded-lg transition-colors">
+                <X size={14} className="text-slate-400" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-3">
+              {resultModal.meta && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 flex items-center gap-3">
+                  <span className={`shrink-0 px-2 py-0.5 rounded text-[8px] font-black border ${resultModal.meta.type === 'EXTERNAL' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-indigo-50 text-indigo-600 border-indigo-200'}`}>
+                    {resultModal.meta.type}
+                  </span>
+                  <p className="text-[12px] font-black text-slate-800 uppercase truncate">{resultModal.meta.name}</p>
+                </div>
+              )}
+              <p className="text-[12px] text-slate-500 leading-relaxed">{resultModal.message}</p>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setResultModal(null)}
+                className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider text-white rounded-lg transition-all active:scale-95 ${resultModal.type === 'success' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}
+              >
+                {resultModal.type === 'success' ? 'Done' : 'Dismiss'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteModal.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
+                  <Trash2 size={14} className="text-red-600" />
+                </div>
+                <h2 className="text-[13px] font-black text-slate-800 uppercase tracking-tight">Confirm Deletion</h2>
+              </div>
+              <button onClick={() => setDeleteModal({ show: false, service: null })} className="p-1 hover:bg-slate-100 rounded transition-colors">
+                <X size={14} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-[12px] text-slate-500">You are about to permanently delete this service from the manifest:</p>
+              <div className="bg-red-50 border border-red-100 rounded-lg px-4 py-3">
+                <p className="text-[12px] font-black text-red-800 uppercase">{deleteModal.service?.service_name}</p>
+                <p className="text-[10px] text-red-400 italic mt-0.5">{deleteModal.service?.service_description || 'No description'}</p>
+              </div>
+              <p className="text-[10px] text-slate-400 italic">This action cannot be undone.</p>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button onClick={() => setDeleteModal({ show: false, service: null })} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">Cancel</button>
+              <button onClick={confirmDelete} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all active:scale-95 flex items-center gap-1.5">
+                <Trash2 size={11} /> Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT SERVICE MODAL */}
+      {editModal.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                  <Edit3 size={14} className="text-blue-600" />
+                </div>
+                <h2 className="text-[13px] font-black text-slate-800 uppercase tracking-tight">Edit Service</h2>
+              </div>
+              <button onClick={() => setEditModal({ show: false, service: null })} className="p-1 hover:bg-slate-100 rounded transition-colors">
+                <X size={14} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Service Name *</label>
+                <input
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-bold uppercase outline-none focus:bg-white focus:border-blue-500 transition-all"
+                  value={editData.service_name}
+                  onChange={e => setEditData({ ...editData, service_name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Description / Scope *</label>
+                <textarea
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-medium outline-none focus:bg-white focus:border-blue-500 transition-all resize-none min-h-[90px]"
+                  value={editData.service_description}
+                  onChange={e => setEditData({ ...editData, service_description: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Classification</label>
+                <div className="flex gap-2 pt-1">
+                  {['INTERNAL', 'EXTERNAL'].map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setEditData({ ...editData, service_type: type })}
+                      className={`flex-1 py-2 text-[9px] font-black rounded-lg border transition-all ${editData.service_type === type
+                        ? 'bg-[#001d3d] text-white border-[#001d3d]'
+                        : 'bg-transparent text-slate-400 border-slate-300 hover:border-slate-400'
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button onClick={() => setEditModal({ show: false, service: null })} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">Cancel</button>
+              <button onClick={() => handleUpdate(editModal.service?.id)} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all active:scale-95 flex items-center gap-1.5">
+                <Save size={11} /> Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

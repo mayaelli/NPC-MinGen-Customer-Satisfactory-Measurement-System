@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const AdminLogin = () => {
@@ -7,6 +7,24 @@ const AdminLogin = () => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  // If a valid session already exists, skip the login page entirely
+  useEffect(() => {
+    const saved = localStorage.getItem('user');
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      // Honour the expiry timestamp if present
+      if (parsed.expires_at && Date.now() > parsed.expires_at) {
+        localStorage.removeItem('user');
+        return;
+      }
+      // Session still valid — send them straight to the dashboard
+      navigate('/admin-pages', { replace: true });
+    } catch {
+      localStorage.removeItem('user');
+    }
+  }, [navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();

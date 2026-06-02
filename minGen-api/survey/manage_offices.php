@@ -1,4 +1,5 @@
 <?php
+ini_set('display_errors', '0');
 session_start();
 require_once '../config/db.php';
 
@@ -47,6 +48,18 @@ try {
         }
 
         if (!empty($data->name) && !empty($data->plant_name)) {
+            // Duplicate check — same name within the same plant (case-insensitive, trimmed)
+            $dupStmt = $conn->prepare("SELECT id FROM offices WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(plant_name)) = LOWER(TRIM(?))");
+            $dupStmt->execute([$data->name, $data->plant_name]);
+            if ($dupStmt->fetch()) {
+                echo json_encode([
+                    "status" => "error",
+                    "code"   => "DUPLICATE_NAME",
+                    "message" => "\"" . $data->name . "\" already exists under " . $data->plant_name . ". Please use a different name."
+                ]);
+                exit();
+            }
+
             try {
                 $conn->beginTransaction();
 
@@ -73,7 +86,7 @@ try {
 
                 // 1. Use the Abbreviation for the prefix (it's already short and unique)
                 // e.g., "Agus 1/2 HEPPC" -> "agus12heppc"
-                $plantPrefix = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $data->abbreviation));
+                $plantPrefix = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $abbr));
 
                 // 2. Use the first word of the Office Name
                 // e.g., "Finance Office" -> "finance"
@@ -102,7 +115,7 @@ try {
 
                 $conn->commit();
 
-                logAction($conn, $_SESSION['user_id'], 'CREATE', 'offices', "Created Office: " . $data->name . " with User: " . $username);
+                logAction($conn, $_SESSION['user_id'] ?? null, 'CREATE', 'offices', "Created Office: " . $data->name . " with User: " . $username);
 
                 echo json_encode([
                     "status" => "success", 

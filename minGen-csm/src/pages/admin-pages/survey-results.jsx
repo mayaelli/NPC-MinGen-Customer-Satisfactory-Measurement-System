@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import html2pdf from 'html2pdf.js';
-import { Search, RotateCcw, Filter, ChevronLeft, ChevronRight, Download, Printer, FileText, PieChart, User, Calendar, Layers, X } from 'lucide-react';
+import { Search, RotateCcw, Filter, ChevronLeft, ChevronRight, Download, FileText, PieChart, User, Calendar, Layers, X, Printer } from 'lucide-react';
 
 const A4_PRINT_STYLE = `
   @media print {
@@ -417,11 +417,6 @@ const SurveyResults = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
               Download PDF
-            </button>
-
-            {/* Existing Print Button */}
-            <button onClick={() => window.print()} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase shadow-xl hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2">
-              Print Document
             </button>
 
             {/* Close Modal */}

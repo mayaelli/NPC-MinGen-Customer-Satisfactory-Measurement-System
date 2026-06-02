@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Building2, ClipboardList, MessageSquare, ShieldCheck, UserCog } from 'lucide-react';
+import { LayoutDashboard, Building2, ClipboardList, MessageSquare, ShieldCheck, UserCog, Menu, X } from 'lucide-react';
 import AdminDashboard from './admin-dashboard';
 import OfficeManagement from './office-management';
 import ArtaServices from './arta-services';
@@ -15,6 +15,8 @@ const AdminPage = () => {
   const [surveys, setSurveys] = useState([]);
   const [offices, setOffices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const fetchOfficeData = async () => {
     try {
@@ -30,16 +32,56 @@ const AdminPage = () => {
     }
   };
 
-  // Logic remains untouched as requested
+  const REFRESH_URL = 'http://localhost/MinGen%20CSM/minGen-api/auth/refresh_session.php';
+
+  const forceLogout = () => {
+    localStorage.removeItem('user');
+    navigate('/login');
+  };
+
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
-    if (!savedUser) {
-      navigate('/login');
-    } else {
-      setUser(JSON.parse(savedUser));
-      fetchSurveyData();
-      fetchOfficeData();
+    if (!savedUser) { navigate('/login'); return; }
+
+    const parsed = JSON.parse(savedUser);
+
+    // ── Client-side pre-check ───────────────────────────────────────────────
+    // If we stored an expiry timestamp and it has already passed, log out
+    // immediately without waiting for a network round-trip.
+    if (parsed.expires_at && Date.now() > parsed.expires_at) {
+      forceLogout();
+      return;
     }
+
+    setUser(parsed);
+
+    // ── Server-side session validation ─────────────────────────────────────
+    // Called for every user on every mount:
+    //   • Enforces the 8-hour idle timeout (server destroys session if stale)
+    //   • Renews the idle timer on the server
+    //   • Refreshes permissions/offices for provisioned users without re-login
+    //   • Returns a fresh expires_at so the client-side pre-check stays accurate
+    fetch(`${REFRESH_URL}?user_id=${parsed.id || ''}`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(res => {
+        if (res.status === 'expired' || res.status === 'error') {
+          // Server says the session is gone — force logout
+          forceLogout();
+          return;
+        }
+        if (res.status === 'success') {
+          // Merge updated user data + fresh expiry back into localStorage
+          const updated = { ...res.user, expires_at: res.expires_at };
+          localStorage.setItem('user', JSON.stringify(updated));
+          setUser(updated);
+        }
+      })
+      .catch(() => {
+        // Network error — keep the cached user but don't extend expiry
+      });
+
+    fetchSurveyData();
+    fetchOfficeData();
   }, [navigate]);
 
   const fetchSurveyData = async () => {
@@ -72,22 +114,21 @@ const AdminPage = () => {
   };
 
   const handleLogout = () => {
-    // Use a confirmation to prevent accidental clicks
-    const confirmLogout = window.confirm(
-      "SECURITY PROTOCOL: Are you sure you want to terminate this active session? \n\nAny unsaved changes will be lost."
-    );
-
-    if (confirmLogout) {
-      // 1. Clear session data
-      localStorage.removeItem('user');
-
-      // 2. Optional: Add a small delay for "Processing" effect
-      console.log("Session Terminated. Redirecting to Secure Login...");
-
-      // 3. Navigate back
-      navigate('/login');
-    }
+    localStorage.removeItem('user');
+    navigate('/login');
   };
+
+  // Derive permission helpers from the user object (populated at login for provisioned accounts)
+  const userPerms = user?.permissions || [];
+  const canAccessOfficeManagement =
+    ['admin', 'super_admin'].includes(user?.role) ||
+    userPerms.some(p => p.startsWith('offices_'));
+  const canAccessServices =
+    ['admin', 'super_admin', 'office', 'manager'].includes(user?.role) ||
+    userPerms.some(p => p.startsWith('services_'));
+  const canAccessAdminManagement =
+    user?.role === 'super_admin' ||
+    userPerms.some(p => p.startsWith('admin_'));
 
   const renderContent = () => {
     if (loading) {
@@ -102,32 +143,21 @@ const AdminPage = () => {
       );
     }
 
-
     switch (activeTab) {
       case 'overview':
-        // Everyone sees this
         return <AdminDashboard data={surveys} user={user} />;
 
       case 'office_management':
-        // STRICT: ADMIN & SUPER_ADMIN ONLY
-        if (user.role === 'admin' || user.role === 'super_admin') {
-          return <OfficeManagement user={user} />;
-        }
+        if (canAccessOfficeManagement) return <OfficeManagement user={user} />;
         return <AdminDashboard data={surveys} user={user} />;
 
-      case 'services':
-        // STRICT: ADMIN, SUPER_ADMIN, OFFICE, MANAGER
-        const allowedServiceRoles = ['admin', 'super_admin', 'office', 'manager'];
-        if (allowedServiceRoles.includes(user.role)) {
-          return <ArtaServices />;
-        }
+      case 'services': {
+        if (canAccessServices) return <ArtaServices />;
         return <AdminDashboard data={surveys} user={user} />;
+      }
 
       case 'admin_management':
-        // STRICT: SUPER_ADMIN ONLY
-        if (user.role === 'super_admin') {
-          return <AdminManagement />;
-        }
+        if (canAccessAdminManagement) return <AdminManagement />;
         return <AdminDashboard data={surveys} user={user} />;
 
       case 'results': return <SurveyResults data={surveys} />;
@@ -143,10 +173,32 @@ const AdminPage = () => {
   return (
     <div className="h-screen flex bg-[#f8fafc] font-sans text-slate-900 overflow-hidden">
 
+      {/* Backdrop — mobile only, closes sidebar on tap */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* SIDEBAR: Command Panel Style */}
-      <aside className="w-72 bg-[#001d3d] text-white flex flex-col relative z-20 shadow-[4px_0_24px_rgba(0,0,0,0.1)]">
+      <aside className={`
+        fixed inset-y-0 left-0 z-40
+        lg:relative lg:inset-auto lg:z-20 lg:translate-x-0
+        w-72 bg-[#001d3d] text-white flex flex-col
+        shadow-[4px_0_24px_rgba(0,0,0,0.1)]
+        transition-transform duration-300 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
         {/* Sidebar Header */}
-        <div className="p-8 pb-10">
+        <div className="p-8 pb-10 relative">
+          {/* Close button — mobile only */}
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden absolute top-4 right-4 p-1.5 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <X size={16} />
+          </button>
           <div className="flex flex-col gap-4">
             <img src="/npc-new-logo.png" alt="NPC" className="h-14 w-14 object-contain opacity-90" />
             <div className="space-y-1">
@@ -161,17 +213,17 @@ const AdminPage = () => {
           <p className="px-4 py-3 text-[9px] font-black text-white/20 uppercase tracking-[0.4em]">System Nodes</p>
           {[
             { id: 'overview', label: 'Dashboard Overview' },
-            ...(['admin', 'super_admin'].includes(user.role) ? [{ id: 'office_management', label: 'Office Directory' }] : []),
-            ...(['admin', 'super_admin', 'office', 'manager'].includes(user.role) ? [{ id: 'services', label: 'ARTA Services' }] : []),
+            ...(canAccessOfficeManagement ? [{ id: 'office_management', label: 'Office Directory' }] : []),
+            ...(canAccessServices ? [{ id: 'services', label: 'ARTA Services' }] : []),
             { id: 'results', label: 'Feedback Stream' },
             { id: 'reports', label: 'Compliance Audit' },
-            ...(user.role === 'super_admin' ? [{ id: 'admin_management', label: 'Admin Accounts' }] : []),
+            ...(canAccessAdminManagement ? [{ id: 'admin_management', label: 'Admin Accounts' }] : []),
           ].map((item) => {
             const DynamicIcon = IconMap[item.id];
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
                 className={`w-full group flex items-center justify-between px-4 py-4 transition-all duration-300 relative ${activeTab === item.id
                   ? 'bg-blue-600/10 text-white'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
@@ -202,27 +254,21 @@ const AdminPage = () => {
             <div className="h-8 w-8 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30 text-[10px] font-black text-blue-400">
               {user.username.charAt(0).toUpperCase()}
             </div>
-            <div className="overflow-hidden">
-              {/* 1. Added Department/Office Name here */}
+            <div className="overflow-hidden min-w-0">
               <p className="text-[10px] font-black text-white truncate uppercase tracking-tight">
-                {user.office_name || "Mingen Division"}
+                {user.full_name || user.username}
               </p>
-
-              {/* 2. Added User/Role Info */}
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <p className="text-[8px] font-bold text-blue-400/60 uppercase tracking-tighter italic">
-                  @{user.username}
-                </p>
-                <span className="text-[8px] text-white/20">•</span>
-                <p className="text-[8px] font-black text-indigo-400 uppercase tracking-tighter">
-                  {user.role}
-                </p>
-              </div>
+              <p className="text-[8px] font-bold text-blue-400/60 uppercase tracking-tighter italic truncate mt-0.5">
+                @{user.username}
+              </p>
+              <p className="text-[8px] font-black text-indigo-400 uppercase tracking-tighter mt-0.5">
+                {user.role}
+              </p>
             </div>
           </div>
 
           <button
-            onClick={handleLogout}
+            onClick={() => setShowLogoutModal(true)}
             className="w-full py-3 bg-white/5 hover:bg-red-600/20 text-white/40 hover:text-red-400 text-[9px] font-black rounded-none transition-all uppercase tracking-[0.2em] border border-white/5 hover:border-red-500/30"
           >
             Terminate Session
@@ -230,11 +276,62 @@ const AdminPage = () => {
         </div>
       </aside>
 
+      {/* Terminate Session Modal */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#00152e] border border-red-500/30 w-[360px] p-8 flex flex-col gap-6 shadow-2xl">
+            <div className="flex flex-col gap-2">
+              <p className="text-[9px] font-black text-red-400 uppercase tracking-[0.3em]">Security Protocol</p>
+              <h2 className="text-sm font-black text-white uppercase tracking-tight">Terminate Session?</h2>
+              <p className="text-[10px] text-white/40 leading-relaxed mt-1">
+                You are about to end your active session. Any unsaved changes will be lost and you will be redirected to the secure login page.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLogoutModal(false)}
+                className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/70 text-[9px] font-black uppercase tracking-[0.2em] border border-white/10 hover:border-white/20 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex-1 py-3 bg-red-600/20 hover:bg-red-600/40 text-red-400 hover:text-red-300 text-[9px] font-black uppercase tracking-[0.2em] border border-red-500/30 hover:border-red-500/60 transition-all"
+              >
+                Terminate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MAIN VIEWPORT */}
       <main className="flex-1 flex flex-col relative h-screen overflow-hidden">
 
+        {/* Mobile top bar — hidden on lg+ */}
+        <div className="lg:hidden flex items-center gap-3 px-4 py-3 bg-[#001d3d] border-b border-white/10 shrink-0">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <Menu size={18} />
+          </button>
+          <div className="flex items-center gap-2.5">
+            <img src="/npc-new-logo.png" alt="NPC" className="h-6 w-6 object-contain opacity-80" />
+            <div>
+              <p className="text-[10px] font-black text-white uppercase tracking-tight leading-none">Mindanao Gen</p>
+              <p className="text-[8px] text-blue-400 font-bold tracking-widest uppercase">Control Center v2.0</p>
+            </div>
+          </div>
+          <div className="ml-auto">
+            <div className="h-7 w-7 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30 text-[10px] font-black text-blue-400">
+              {user.username.charAt(0).toUpperCase()}
+            </div>
+          </div>
+        </div>
+
         {/* Content Container */}
-        <div className="flex-1 overflow-y-auto px-10 py-4 custom-scrollbar scroll-smooth">
+        <div className="flex-1 overflow-y-auto px-4 md:px-10 py-4 custom-scrollbar scroll-smooth">
           <div className="max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-4 duration-1000">
             {renderContent()}
           </div>

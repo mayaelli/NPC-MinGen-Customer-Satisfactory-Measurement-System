@@ -39,9 +39,10 @@ if (!empty($data->username) && !empty($data->password)) {
         }
         // --- END RATE LIMIT CHECK ---
 
-        $query = "SELECT u.*, o.name as office_name, o.plant_name 
-                  FROM users u 
-                  LEFT JOIN offices o ON u.office_id = o.id 
+        $query = "SELECT u.*, o.name as office_name, o.plant_name, ed.name as full_name
+                  FROM users u
+                  LEFT JOIN offices o ON u.office_id = o.id
+                  LEFT JOIN employee_directory ed ON u.employee_id = ed.id
                   WHERE u.username = :username LIMIT 1";
 
         $stmt = $conn->prepare($query);
@@ -70,14 +71,39 @@ if (!empty($data->username) && !empty($data->password)) {
                 $update_login = $conn->prepare("UPDATE users SET last_login = NOW() WHERE id = :id");
                 $update_login->execute([':id' => $user['id']]);
                 
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['role'] = $user['role'];
-                $_SESSION['username'] = $user['username']; // Added this to session for logging clarity
-                $_SESSION['office_id'] = $user['office_id'];
-                $_SESSION['plant_name'] = $user['plant_name'];
+                $_SESSION['user_id']       = $user['id'];
+                $_SESSION['role']          = $user['role'];
+                $_SESSION['username']      = $user['username'];
+                $_SESSION['office_id']     = $user['office_id'];
+                $_SESSION['plant_name']    = $user['plant_name'];
+                $_SESSION['is_provisioned']= (int)($user['is_provisioned'] ?? 0);
+                $_SESSION['last_activity'] = time(); // idle timeout clock starts here
+
+                // Provisioned employees: load their assigned offices + permissions
+                if ($_SESSION['is_provisioned'] === 1) {
+                    $offStmt = $conn->prepare(
+                        "SELECT uo.office_id, o.name AS office_name, o.abbreviation
+                         FROM user_offices uo JOIN offices o ON uo.office_id = o.id
+                         WHERE uo.user_id = ?"
+                    );
+                    $offStmt->execute([$user['id']]);
+                    $offRows = $offStmt->fetchAll(PDO::FETCH_ASSOC);
+                    $_SESSION['office_ids'] = array_column($offRows, 'office_id');
+
+                    $permStmt = $conn->prepare(
+                        "SELECT permission FROM user_permissions WHERE user_id = ?"
+                    );
+                    $permStmt->execute([$user['id']]);
+                    $_SESSION['permissions'] = array_column($permStmt->fetchAll(PDO::FETCH_ASSOC), 'permission');
+
+                    // Expose to frontend so the UI can scope office dropdowns + show correct nav items
+                    $user['permissions']          = $_SESSION['permissions'];
+                    $user['assigned_office_ids']  = $_SESSION['office_ids'];
+                    $user['assigned_offices']     = $offRows; // [{office_id, office_name, abbreviation}]
+                }
 
                 logAction($conn, $user['id'], 'LOGIN', 'users', "System access granted. Session started for " . $user['username']);
-                
+
                 unset($user['password']);
                 unset($user['raw_password']); // Also remove the raw password!
                 

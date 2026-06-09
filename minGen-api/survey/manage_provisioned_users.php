@@ -1,4 +1,33 @@
 <?php
+/**
+ * manage_provisioned_users.php — Identity Provisioning & Access Management
+ *
+ * Handles the full lifecycle of provisioned employee accounts.
+ *
+ * GET    ?user_id={id}              → list all provisioned users with their offices + permissions
+ * GET    ?user_id={id}&action=logs  → stream last 30 activity_logs entries (auto-polled every 6s)
+ * POST   { employee_dir_id, office_ids[], permissions[] } → create new provisioned account
+ * PUT    { user_id, office_ids[], permissions[], password? } → update access scope + permissions
+ * PATCH  { user_id, is_active: 0|1 } → revoke (0) or restore (1) access without deleting
+ * DELETE ?id={id}                   → permanently remove account (super_admin only)
+ *
+ * Access gates:
+ *   - super_admin: full access to all methods
+ *   - provisioned with admin_provision: POST only
+ *   - provisioned with admin_edit: PUT only
+ *   - provisioned with admin_revoke: PATCH only
+ *   - DELETE is always super_admin only — no delegation
+ *
+ * The __all__ sentinel (office_id = '__all__') in the frontend OfficeChipSelector
+ * is resolved to real office IDs by resolveOfficeIds() before the API call.
+ * The backend never sees '__all__' — it always receives an array of integer IDs.
+ *
+ * PATCH vs DELETE:
+ *   Use PATCH (revoke) to temporarily block access while preserving the account.
+ *   Use DELETE only when the employee has permanently left and their account
+ *   record is no longer needed. Deleting also removes user_offices and
+ *   user_permissions rows via CASCADE on the foreign keys.
+ */
 session_start();
 require_once '../config/db.php';
 

@@ -1,4 +1,25 @@
 <?php
+/**
+ * refresh_session.php — Session Heartbeat & Token Refresh
+ *
+ * GET /minGen-api/auth/refresh_session.php?user_id={id}
+ * Called by admin-pages.jsx on every admin panel mount.
+ *
+ * Responsibilities:
+ *   1. Enforce 8-hour idle timeout (IDLE_TIMEOUT constant below)
+ *   2. Reset the idle timer so active users don't get logged out mid-session
+ *   3. Re-fetch the latest user data from DB (catches deactivated accounts)
+ *   4. For provisioned users: ALWAYS reload offices + permissions from DB.
+ *      This ensures admin access changes take effect at the next page load
+ *      without requiring the provisioned user to log out and back in.
+ *   5. Return expires_at (milliseconds) so the frontend can do a fast
+ *      client-side pre-check on next mount without a network call.
+ *
+ * To change the session timeout: edit the IDLE_TIMEOUT value below.
+ * Current value: 8 hours (one work shift).
+ *
+ * Response: { status: 'success'|'expired'|'error', user: {...}, expires_at: ms }
+ */
 session_start();
 require_once '../config/db.php';
 

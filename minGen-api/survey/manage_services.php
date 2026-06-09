@@ -1,4 +1,28 @@
 <?php
+/**
+ * manage_services.php — ARTA Services CRUD Endpoint
+ *
+ * Handles all operations on the arta_services table.
+ *
+ * GET    ?user_id={id}           → active services (is_active = 1), scoped by role
+ * GET    ?user_id={id}&archived=1 → archived services (is_active = 0)
+ * POST                           → create new service
+ * PUT    { id, ...fields }       → update service name/type/description
+ * PUT    { id, restore: true }   → restore an archived service (set is_active = 1)
+ * DELETE ?id={id}                → soft-delete (set is_active = 0, NOT a real DELETE)
+ *
+ * IMPORTANT — Soft Delete Design:
+ *   Services are NEVER hard-deleted from the database. Deleting a service row
+ *   would break the LEFT JOIN in get_survey_results.php and cause service_name
+ *   to appear as NULL in compliance reports for historical submissions.
+ *   Instead, is_active = 0 hides the service from the manifest and survey form
+ *   while keeping the row intact for report integrity.
+ *   To restore: PUT { id, restore: true }
+ *
+ * service_type (INTERNAL / EXTERNAL) affects which column a service falls
+ * into in the CSM Tabulation and Score Per Service compliance reports.
+ * Changing a service's type after submissions exist will affect report output.
+ */
 session_start();
 require_once '../config/db.php';
 
@@ -76,7 +100,7 @@ try {
                 FROM arta_services s
                 LEFT JOIN offices o ON s.office_id = o.id
                 LEFT JOIN submissions sub ON s.id = sub.service_id
-                WHERE s.is_active = 1";
+                WHERE s.is_active = " . (isset($_GET['archived']) ? '0' : '1');
 
         $params = [];
 
@@ -182,6 +206,16 @@ try {
 
         if ($method === 'PUT') {
             $data = json_decode(file_get_contents("php://input"));
+
+            // Restore archived service
+            if (!empty($data->restore) && $data->restore === true) {
+                $stmt = $conn->prepare("UPDATE arta_services SET is_active = 1 WHERE id = ?");
+                $stmt->execute([$data->id]);
+                logAction($conn, $resolvedUserId, 'UPDATE', 'arta_services', "Restored archived Service ID: " . $data->id);
+                echo json_encode(["status" => "success", "message" => "Service restored to manifest."]);
+                exit;
+            }
+
             $stmt = $conn->prepare("UPDATE arta_services SET service_name = ?, service_type = ?, service_description = ? WHERE id = ?");
             $stmt->execute([strtoupper($data->service_name), strtoupper($data->service_type ?? ''), strtoupper($data->service_description ?? ''), $data->id]);
             logAction($conn, $resolvedUserId, 'UPDATE', 'arta_services', "Updated Service ID: " . $data->id);

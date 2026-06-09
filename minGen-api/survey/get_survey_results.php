@@ -1,4 +1,29 @@
 <?php
+/**
+ * get_survey_results.php — Survey Submissions Endpoint
+ *
+ * GET /minGen-api/survey/get_survey_results.php?user_id={id}
+ *
+ * Returns all survey submissions the requesting user is authorized to see.
+ * The RBAC filter is applied as a WHERE clause on the SQL query — it is NOT
+ * done in PHP after fetching everything. This keeps the result set lean.
+ *
+ * Access levels (each maps to a different WHERE clause):
+ *   super_admin / admin   → no filter, sees all submissions
+ *   auditor (office flag) → same as admin — set via is_auditor_enabled on offices table
+ *   manager               → WHERE o.plant_name = their plant
+ *   office                → WHERE s.office_id = their office
+ *   provisioned           → WHERE s.office_id IN (their assigned office IDs from user_offices)
+ *
+ * After the main fetch, each submission is augmented with its individual
+ * question ratings (CC1–CC3, SQD0–SQD8) via a secondary per-submission query.
+ * These are attached as flat keys (e.g., $s['SQD1'], $s['sqd1_val']) so the
+ * frontend reports page can access them by question code directly.
+ *
+ * NOTE: arta_services is LEFT JOINed — if a service was archived/deleted,
+ * service_name will be NULL but the submission row is still returned. This is
+ * intentional to preserve historical records.
+ */
 session_start();
 require_once '../config/db.php';
 

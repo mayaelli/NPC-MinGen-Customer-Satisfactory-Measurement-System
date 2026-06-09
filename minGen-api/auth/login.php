@@ -1,4 +1,26 @@
 <?php
+/**
+ * login.php — Authentication Endpoint
+ *
+ * POST /minGen-api/auth/login.php
+ * Body: { username: string, password: string }
+ *
+ * Flow:
+ *   1. Rate limit check — blocks IP after 5 failed attempts within 5 minutes
+ *   2. Fetch user row with office + employee_directory JOIN
+ *   3. Verify password via bcrypt (password_verify) OR raw_password fallback
+ *      NOTE: raw_password fallback exists for system-generated office accounts
+ *      that haven't changed their password yet. Once changed, raw_password is
+ *      cleared and only the hash is used. See change_password.php.
+ *   4. Check is_active — deactivated accounts are rejected with HTTP 403
+ *   5. Set PHP session variables
+ *   6. For provisioned users: load office assignments + permissions from DB
+ *      and attach them to the response so the frontend can scope its UI
+ *   7. Strip password fields before returning the user object
+ *
+ * To change the lockout threshold or window, edit $block_time and the >= 5 check.
+ * To extend session data for a new role, add to the $_SESSION block below.
+ */
 // 1. Session must start before any output
 session_start();
 

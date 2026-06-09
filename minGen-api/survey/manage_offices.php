@@ -1,4 +1,36 @@
 <?php
+/**
+ * manage_offices.php — Office Directory CRUD Endpoint
+ *
+ * Handles all operations on the offices table.
+ *
+ * GET                         → all offices with parent JOIN, ordered by plant → name
+ * POST { name, plant_name }   → create new office record
+ * POST { action: 'toggle_auditor', id, status } → toggle is_auditor_enabled flag
+ * PUT  { id, ...fields }      → update office details (name, plant, abbreviation)
+ * PUT  { id, reset_password: true } → generate new password for the linked user account
+ * DELETE ?id={id}             → hard delete (removes office + cascades to linked user)
+ *
+ * NOTE on Auditor Toggle:
+ *   When is_auditor_enabled = 1 on an office, that office's user account gains
+ *   read access to all plant data — same as a manager. This is checked in
+ *   get_survey_results.php before applying the RBAC WHERE clause.
+ *   See the $isAuditor check in that file.
+ *
+ * NOTE on Password Reset:
+ *   The reset generates a plain-text password in the format New{4digits}!{abbr}.
+ *   It is stored as both a bcrypt hash (password) and plain text (raw_password)
+ *   so the admin can read it from the Credential Terminal in office-management.jsx.
+ *   Once the office user changes their password via change_password.php,
+ *   raw_password is cleared and they own their credentials.
+ *
+ * NOTE on Delete:
+ *   This is a HARD delete unlike services. Offices don't carry historical
+ *   report data directly — submissions reference office_id but the office name
+ *   is already stored on the submission row. Deleting an office with existing
+ *   submissions will orphan those records. Use with caution.
+ */
+<?php
 ini_set('display_errors', '0');
 session_start();
 require_once '../config/db.php';

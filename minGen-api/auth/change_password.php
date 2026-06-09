@@ -1,8 +1,23 @@
 <?php
 /**
- * CHANGE PASSWORD API
- * Allows logged-in users to change their own password.
- * On success, clears raw_password (password is now user-owned).
+ * change_password.php — Self-Service Password Change
+ *
+ * POST /minGen-api/auth/change_password.php?user_id={id}
+ * Body: { current_password: string, new_password: string }
+ *
+ * Any logged-in user (any role) can call this to change their own password.
+ * It CANNOT be used to change another user's password — that is handled by
+ * the reset_password flag in manage_offices.php (for office accounts) and
+ * the password field in manage_provisioned_users.php PUT (for provisioned users).
+ *
+ * On success:
+ *   - The new password is hashed with bcrypt and stored in users.password
+ *   - users.raw_password is set to NULL — the user now owns their credentials
+ *     and the system no longer stores a readable copy
+ *
+ * Minimum password length: 6 characters (enforced here and in the frontend
+ * strength meter in change-password.jsx). To increase the minimum, update
+ * both this file and the frontend validation in change-password.jsx.
  */
 session_start();
 require_once '../config/db.php';

@@ -1,8 +1,40 @@
+/**
+ * arta-services.jsx — ARTA Service Manifest Module
+ *
+ * Manages the list of services offered by each NPC office. These services
+ * appear as the selectable options on the public CSM survey form.
+ *
+ * Key concepts:
+ *
+ * service_type (INTERNAL / EXTERNAL)
+ *   Controls which column a service falls into in the CSM Tabulation and
+ *   Score Per Service compliance reports. Set at creation time.
+ *   Changing it after submissions exist will retroactively affect report output.
+ *
+ * Archive pattern (non-destructive "delete")
+ *   Clicking the ArchiveX button calls DELETE on manage_services.php which
+ *   sets is_active = 0 — it does NOT remove the database row.
+ *   This preserves the service_name reference on all past survey submissions
+ *   so compliance reports remain accurate for historical periods.
+ *   Archived services appear in the collapsible "Archived Services" panel
+ *   at the bottom and can be restored via PUT { id, restore: true }.
+ *
+ * Role visibility (visibleServices useMemo):
+ *   The backend already scopes the API response by role. The frontend applies
+ *   a second filter as a safety net for edge cases. Both must agree on the rules.
+ *   To change who sees what, update BOTH the PHP WHERE clause AND the useMemo here.
+ *
+ * Data sources:
+ *   Active services:   GET manage_services.php?user_id=
+ *   Archived services: GET manage_services.php?user_id=&archived=1
+ *   Offices list:      GET manage_offices.php?user_id=   (for dropdowns)
+ */
 import React, { useState, useEffect, useMemo } from 'react';
 import { canCRUDServices } from '../../utils/permissions';
 import {
-  Plus, Trash2, Edit3, X, Building2,
-  Search, ChevronRight, Save, CheckCircle2, AlertCircle
+  Edit3, X, Building2,
+  Search, ChevronRight, Save, CheckCircle2, AlertCircle,
+  ArchiveX, ArchiveRestore, Archive
 } from 'lucide-react';
 
 const ArtaServices = () => {
@@ -16,6 +48,8 @@ const ArtaServices = () => {
     (isProvisioned && userPerms.some(p => p.startsWith('services_')));
 
   const [services, setServices] = useState([]);
+  const [archivedServices, setArchivedServices] = useState([]);
+  const [showArchived, setShowArchived] = useState(false);
   const [offices, setOffices] = useState([]);
   const [selectedPlant, setSelectedPlant] = useState('');
   const [newService, setNewService] = useState({ office_id: '', service_name: '', service_type: 'INTERNAL', service_description: '' });
@@ -25,6 +59,7 @@ const ArtaServices = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ show: false, service: null });
+  const [archiveModal, setArchiveModal] = useState({ show: false, service: null });
   const [editModal, setEditModal] = useState({ show: false, service: null });
   const [addNotif, setAddNotif] = useState(null); // inline form validation message
   const [resultModal, setResultModal] = useState(null); // { type: 'success'|'error', title, message, meta? }
@@ -37,14 +72,17 @@ const ArtaServices = () => {
   const fetchData = async () => {
     try {
       const uid = user?.id || '';
-      const [resOffices, resServices] = await Promise.all([
+      const [resOffices, resServices, resArchived] = await Promise.all([
         fetch(`${API_OFFICES}?user_id=${uid}`, { credentials: 'include' }),
-        fetch(`${API_SERVICES}?user_id=${uid}`, { credentials: 'include' })
+        fetch(`${API_SERVICES}?user_id=${uid}`, { credentials: 'include' }),
+        fetch(`${API_SERVICES}?user_id=${uid}&archived=1`, { credentials: 'include' })
       ]);
       const oData = await resOffices.json();
       const sData = await resServices.json();
+      const aData = await resArchived.json();
       if (oData.status === 'success') setOffices(oData.data);
       if (sData.status === 'success') setServices(sData.data);
+      if (aData.status === 'success') setArchivedServices(aData.data);
     } catch (e) { console.error(e); }
   };
 
@@ -110,14 +148,25 @@ const ArtaServices = () => {
     }
   };
 
-  const handleDelete = (service) => {
-    setDeleteModal({ show: true, service });
+  const handleArchive = (service) => {
+    setArchiveModal({ show: true, service });
   };
 
-  const confirmDelete = async () => {
-    const { service } = deleteModal;
-    setDeleteModal({ show: false, service: null });
+  const confirmArchive = async () => {
+    const { service } = archiveModal;
+    setArchiveModal({ show: false, service: null });
     const res = await fetch(`${API_SERVICES}?id=${service.id}`, { method: 'DELETE', credentials: 'include' });
+    const result = await res.json();
+    if (result.status === 'success') fetchData();
+  };
+
+  const handleRestore = async (service) => {
+    const res = await fetch(API_SERVICES, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ id: service.id, restore: true })
+    });
     const result = await res.json();
     if (result.status === 'success') fetchData();
   };
@@ -415,46 +464,47 @@ const ArtaServices = () => {
                         (role === 'office' && String(s.office_id) === String(user.office_id)) ||
                         isProvisioned;
 
-                      const canEdit   = inScope && (role !== 'provisioned' || userPerms.includes('services_edit'));
+                      const canEdit = inScope && (role !== 'provisioned' || userPerms.includes('services_edit'));
                       const canDelete = inScope && (role !== 'provisioned' || userPerms.includes('services_delete'));
 
                       return (
                         <div key={s.id} className="bg-white border border-slate-100 rounded-md p-2 hover:shadow-sm transition-all">
-                            <div className="flex items-center justify-between gap-4">
-                              <div className="flex items-center gap-3 overflow-hidden">
-                                <span className={`shrink-0 px-1.5 py-0.5 rounded text-[7px] font-black border ${s.service_type === 'EXTERNAL'
-                                  ? 'bg-amber-50 text-amber-600 border-amber-200'
-                                  : 'bg-indigo-50 text-indigo-600 border-indigo-200'
-                                  }`}>
-                                  {s.service_type || 'INTERNAL'}
-                                </span>
-                                <div className="truncate">
-                                  <p className="text-[11px] font-bold text-slate-800 uppercase truncate">{s.service_name}</p>
-                                  <p className="text-[9px] text-slate-400 italic truncate max-w-md">{s.service_description || 'No description'}</p>
-                                </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3 overflow-hidden">
+                              <span className={`shrink-0 px-1.5 py-0.5 rounded text-[7px] font-black border ${s.service_type === 'EXTERNAL'
+                                ? 'bg-amber-50 text-amber-600 border-amber-200'
+                                : 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                                }`}>
+                                {s.service_type || 'INTERNAL'}
+                              </span>
+                              <div className="truncate">
+                                <p className="text-[11px] font-bold text-slate-800 uppercase truncate">{s.service_name}</p>
+                                <p className="text-[9px] text-slate-400 italic truncate max-w-md">{s.service_description || 'No description'}</p>
                               </div>
-
-                              {(canEdit || canDelete) && (
-                                <div className="flex gap-1 shrink-0">
-                                  {canEdit && (
-                                    <button
-                                      onClick={() => { setEditModal({ show: true, service: s }); setEditData({ service_name: s.service_name, service_type: s.service_type || 'INTERNAL', service_description: s.service_description || '' }); }}
-                                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                    >
-                                      <Edit3 size={12} />
-                                    </button>
-                                  )}
-                                  {canDelete && (
-                                    <button
-                                      onClick={() => handleDelete(s)}
-                                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
-                                  )}
-                                </div>
-                              )}
                             </div>
+
+                            {(canEdit || canDelete) && (
+                              <div className="flex gap-1 shrink-0">
+                                {canEdit && (
+                                  <button
+                                    onClick={() => { setEditModal({ show: true, service: s }); setEditData({ service_name: s.service_name, service_type: s.service_type || 'INTERNAL', service_description: s.service_description || '' }); }}
+                                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                  >
+                                    <Edit3 size={12} />
+                                  </button>
+                                )}
+                                {canDelete && (
+                                  <button
+                                    onClick={() => handleArchive(s)}
+                                    className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                    title="Archive Service"
+                                  >
+                                    <ArchiveX size={12} />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -465,6 +515,72 @@ const ArtaServices = () => {
           </div>
         ))}
       </div>
+      {/* ARCHIVED SERVICES SECTION */}
+      {archivedServices.length > 0 && canCRUD && (
+        <div className="border border-amber-200 rounded-xl overflow-hidden">
+          <button
+            onClick={() => setShowArchived(p => !p)}
+            className="w-full flex items-center justify-between px-5 py-3 bg-amber-50 hover:bg-amber-100 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Archive size={13} className="text-amber-600" />
+              <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest">
+                Archived Services
+              </span>
+              <span className="text-[8px] bg-amber-200 text-amber-700 px-1.5 py-0.5 rounded-full font-black">
+                {archivedServices.length}
+              </span>
+            </div>
+            <ChevronRight
+              size={13}
+              className={`text-amber-500 transition-transform duration-200 ${showArchived ? 'rotate-90' : ''}`}
+            />
+          </button>
+
+          {showArchived && (
+            <div className="p-4 space-y-3 bg-amber-50/30 animate-in slide-in-from-top-2 duration-200">
+              <p className="text-[8px] text-amber-600 font-bold uppercase tracking-widest px-1">
+                These services are retired from the manifest and survey form. Restore to reactivate.
+              </p>
+              {Object.entries(archivedServices.reduce((acc, s) => {
+                const key = `${s.plant_name || 'UNASSIGNED'} — ${s.office_name || 'UNASSIGNED'}`;
+                if (!acc[key]) acc[key] = [];
+                acc[key].push(s);
+                return acc;
+              }, {})).map(([groupKey, srvs]) => (
+                <div key={groupKey} className="space-y-1">
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1">{groupKey}</p>
+                  {srvs.map(s => (
+                    <div key={s.id} className="bg-white border border-amber-100 rounded-md p-2.5 flex items-center justify-between gap-4 opacity-70 hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <span className={`shrink-0 px-1.5 py-0.5 rounded text-[7px] font-black border ${s.service_type === 'EXTERNAL'
+                          ? 'bg-amber-50 text-amber-600 border-amber-200'
+                          : 'bg-indigo-50 text-indigo-600 border-indigo-200'}`}>
+                          {s.service_type || 'INTERNAL'}
+                        </span>
+                        <div className="truncate">
+                          <p className="text-[11px] font-bold text-slate-600 uppercase truncate line-through decoration-slate-300">
+                            {s.service_name}
+                          </p>
+                          <p className="text-[9px] text-slate-400 italic truncate max-w-md">{s.service_description || 'No description'}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRestore(s)}
+                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all active:scale-95"
+                        title="Restore Service"
+                      >
+                        <ArchiveRestore size={11} /> Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ADD SERVICE RESULT MODAL */}
       {resultModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
@@ -507,33 +623,36 @@ const ArtaServices = () => {
         </div>
       )}
 
-      {/* DELETE CONFIRMATION MODAL */}
-      {deleteModal.show && (
+      {/* ARCHIVE CONFIRMATION MODAL */}
+      {archiveModal.show && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
-                  <Trash2 size={14} className="text-red-600" />
+                <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                  <ArchiveX size={14} className="text-amber-600" />
                 </div>
-                <h2 className="text-[13px] font-black text-slate-800 uppercase tracking-tight">Confirm Deletion</h2>
+                <div>
+                  <h2 className="text-[13px] font-black text-slate-800 uppercase tracking-tight">Archive Service</h2>
+                  <p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Non-destructive action</p>
+                </div>
               </div>
-              <button onClick={() => setDeleteModal({ show: false, service: null })} className="p-1 hover:bg-slate-100 rounded transition-colors">
+              <button onClick={() => setArchiveModal({ show: false, service: null })} className="p-1 hover:bg-slate-100 rounded transition-colors">
                 <X size={14} className="text-slate-400" />
               </button>
             </div>
             <div className="px-6 py-5 space-y-3">
-              <p className="text-[12px] text-slate-500">You are about to permanently delete this service from the manifest:</p>
-              <div className="bg-red-50 border border-red-100 rounded-lg px-4 py-3">
-                <p className="text-[12px] font-black text-red-800 uppercase">{deleteModal.service?.service_name}</p>
-                <p className="text-[10px] text-red-400 italic mt-0.5">{deleteModal.service?.service_description || 'No description'}</p>
+              <p className="text-[12px] text-slate-500">This service will be retired from the manifest and the survey form. Past submissions using this service are preserved.</p>
+              <div className="bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
+                <p className="text-[12px] font-black text-amber-800 uppercase">{archiveModal.service?.service_name}</p>
+                <p className="text-[10px] text-amber-500 italic mt-0.5">{archiveModal.service?.service_description || 'No description'}</p>
               </div>
-              <p className="text-[10px] text-slate-400 italic">This action cannot be undone.</p>
+              <p className="text-[10px] text-slate-400 italic">You can restore this service at any time from the Archived Services section.</p>
             </div>
             <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
-              <button onClick={() => setDeleteModal({ show: false, service: null })} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">Cancel</button>
-              <button onClick={confirmDelete} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all active:scale-95 flex items-center gap-1.5">
-                <Trash2 size={11} /> Delete Permanently
+              <button onClick={() => setArchiveModal({ show: false, service: null })} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">Cancel</button>
+              <button onClick={confirmArchive} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-all active:scale-95 flex items-center gap-1.5">
+                <ArchiveX size={11} /> Archive Service
               </button>
             </div>
           </div>
@@ -583,7 +702,7 @@ const ArtaServices = () => {
                       className={`flex-1 py-2 text-[9px] font-black rounded-lg border transition-all ${editData.service_type === type
                         ? 'bg-[#001d3d] text-white border-[#001d3d]'
                         : 'bg-transparent text-slate-400 border-slate-300 hover:border-slate-400'
-                      }`}
+                        }`}
                     >
                       {type}
                     </button>

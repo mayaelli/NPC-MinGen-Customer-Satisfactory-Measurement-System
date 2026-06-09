@@ -1,3 +1,18 @@
+/**
+ * permissions.js — Client-side RBAC helpers
+ *
+ * These functions are used by frontend components to decide whether to
+ * SHOW or HIDE UI elements (buttons, forms, nav items). They are NOT a
+ * security boundary — the PHP backend enforces the same rules server-side
+ * on every request. Changes here must be mirrored in the corresponding
+ * PHP endpoint logic.
+ *
+ * Role hierarchy (highest → lowest):
+ *   super_admin → admin → manager → office → provisioned → auditor (special)
+ *
+ * 'provisioned' users have no default access — everything is controlled by
+ * their individual permission keys in user_permissions (managed in admin-management.jsx).
+ */
 export const ROLES = {
   SUPER_ADMIN: 'super_admin',
   AUDITOR: 'auditor',

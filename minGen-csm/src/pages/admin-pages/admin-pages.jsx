@@ -1,12 +1,33 @@
+/**
+ * admin-pages.jsx — Admin Portal Shell
+ *
+ * This is the single most important file in the admin side of the app.
+ * It acts as the layout host and navigation controller for ALL admin modules.
+ *
+ * Key responsibilities:
+ *   1. Session validation — calls refresh_session.php on every mount to verify
+ *      the PHP session is still alive and re-sync permissions for provisioned users
+ *   2. Tab routing — manages `activeTab` state and renders the correct module
+ *      via renderContent(). To add a new admin module: add a case here and a
+ *      nav item in the sidebar array below.
+ *   3. Data preloading — fetches surveys and offices once on mount and passes
+ *      them as props to child modules that need them (Dashboard, Reports)
+ *   4. Permission guards — derives canAccess* booleans from the user object
+ *      to show/hide nav items and block unauthorized tab access
+ *
+ * IMPORTANT: The sidebar nav array and renderContent() switch must always be
+ * kept in sync. If you add a tab to one, add it to the other.
+ */
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Building2, ClipboardList, MessageSquare, ShieldCheck, UserCog, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Building2, ClipboardList, MessageSquare, ShieldCheck, UserCog, Menu, X, KeyRound } from 'lucide-react';
 import AdminDashboard from './admin-dashboard';
 import OfficeManagement from './office-management';
 import ArtaServices from './arta-services';
 import SurveyResults from './survey-results';
 import { ReportsPage } from './reports-page';
 import AdminManagement from './admin-management';
+import ChangePassword from './change-password';
 
 const AdminPage = () => {
   const navigate = useNavigate();
@@ -111,6 +132,7 @@ const AdminPage = () => {
     results: MessageSquare,
     reports: ShieldCheck,
     admin_management: UserCog,
+    change_password: KeyRound,
   };
 
   const handleLogout = () => {
@@ -118,7 +140,12 @@ const AdminPage = () => {
     navigate('/login');
   };
 
-  // Derive permission helpers from the user object (populated at login for provisioned accounts)
+  // ── Permission guards ────────────────────────────────────────────────────
+  // Derived from the user object stored in localStorage (populated at login
+  // and refreshed by refresh_session.php on every mount).
+  // These control both sidebar visibility and renderContent() access.
+  // To grant a new role access to a module, add it to the array below AND
+  // update the corresponding PHP endpoint's RBAC logic.
   const userPerms = user?.permissions || [];
   const canAccessOfficeManagement =
     ['admin', 'super_admin'].includes(user?.role) ||
@@ -130,6 +157,10 @@ const AdminPage = () => {
     user?.role === 'super_admin' ||
     userPerms.some(p => p.startsWith('admin_'));
 
+  // ── Tab content renderer ─────────────────────────────────────────────────
+  // Central dispatcher — maps activeTab string to the correct module component.
+  // Unauthorized tab access falls back to AdminDashboard rather than an error.
+  // Add new modules here as: case 'your_tab_id': return <YourComponent />;
   const renderContent = () => {
     if (loading) {
       return (
@@ -159,6 +190,9 @@ const AdminPage = () => {
       case 'admin_management':
         if (canAccessAdminManagement) return <AdminManagement />;
         return <AdminDashboard data={surveys} user={user} />;
+
+      case 'change_password':
+        return <ChangePassword user={user} />;
 
       case 'results': return <SurveyResults data={surveys} />;
       case 'reports': return <ReportsPage data={surveys} allOffices={offices} user={user} />;
@@ -202,7 +236,7 @@ const AdminPage = () => {
           <div className="flex flex-col gap-4">
             <img src="/npc-new-logo.png" alt="NPC" className="h-14 w-14 object-contain opacity-90" />
             <div className="space-y-1">
-              <h1 className="font-black text-lg tracking-tighter leading-none uppercase italic">Mindanao Gen</h1>
+              <h1 className="font-black text-lg tracking-tighter leading-none uppercase italic">MinGen NAPOCOR</h1>
               <p className="text-[9px] text-blue-400 font-black tracking-[0.3em] uppercase">Control Center v2.0</p>
             </div>
           </div>
@@ -218,6 +252,7 @@ const AdminPage = () => {
             { id: 'results', label: 'Feedback Stream' },
             { id: 'reports', label: 'Compliance Audit' },
             ...(canAccessAdminManagement ? [{ id: 'admin_management', label: 'Admin Accounts' }] : []),
+            { id: 'change_password', label: 'Change Password' },
           ].map((item) => {
             const DynamicIcon = IconMap[item.id];
             return (

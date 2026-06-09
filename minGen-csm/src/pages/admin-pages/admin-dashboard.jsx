@@ -1,3 +1,19 @@
+/**
+ * admin-dashboard.jsx — Dashboard Overview Module
+ *
+ * Displays the top-level system metrics:
+ *   - Satisfaction Index, Total Submissions, Active Stations (KPI tiles)
+ *   - Monthly score trendline (AreaChart via Recharts)
+ *   - Top offices by submission volume (BarChart)
+ *   - Recent submissions feed (Master Audit Registry table)
+ *
+ * Data source: GET survey/get_dashboard_stats.php?scope=local|global&user_id=
+ * The scope param is controlled by the viewScope toggle (Target Unit / Global Net).
+ * Changing viewScope triggers a re-fetch via the useEffect([viewScope]) dependency.
+ *
+ * Provisioned users without 'view_analytics' permission see a permission-denied
+ * screen instead of the dashboard — controlled by `canViewAnalytics`.
+ */
 import React, { useState, useEffect, useMemo } from 'react';
 import { AreaChart, Area, BarChart, Bar, Cell, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Trophy, Target, Zap, Users, ArrowUpRight, Clock, Download, AlertCircle, ShieldAlert, Activity } from 'lucide-react';
@@ -20,12 +36,17 @@ const AdminDashboard = () => {
     const savedUser = localStorage.getItem('user');
     return savedUser ? JSON.parse(savedUser) : null;
   });
-  
+
   const [stats, setStats] = useState({ total_submissions: 0, overall_satisfaction: 0, office_count: 0 });
   const [submissions, setSubmissions] = useState([]);
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
+  // ── Scope toggle ────────────────────────────────────────────────────────
+  // 'local'  → filters data to this user's office or plant
+  // 'global' → no filter, returns all data system-wide
+  // Initial value: super_admin and manager default to 'global'; others to 'local'.
+  // Changing this re-fetches from get_dashboard_stats.php via the useEffect below.
   const [viewScope, setViewScope] = useState(() => {
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
@@ -40,7 +61,7 @@ const AdminDashboard = () => {
   const canViewAnalytics = useMemo(() => !isProvisioned || userPermissions.includes('view_analytics'), [isProvisioned, userPermissions]);
 
   const limitedSubmissions = useMemo(() => submissions.slice(0, 5), [submissions]);
-  
+
   const ratingStatus = useMemo(() => {
     const score = stats.overall_satisfaction || 0;
     if (score >= 4.5) return { label: 'EXCELLENT', color: 'text-emerald-600', bg: 'bg-emerald-50/50', border: 'border-emerald-200' };
@@ -71,7 +92,7 @@ const AdminDashboard = () => {
           credentials: 'include'
         });
         const data = await response.json();
-        
+
         if (data.status === 'success' && isMounted) {
           setStats({
             total_submissions: parseInt(data.stats?.total_submissions || 0, 10),
@@ -136,10 +157,9 @@ const AdminDashboard = () => {
                   key={scopeOption}
                   disabled={isGlobalDisabled}
                   onClick={() => setViewScope(scopeOption)}
-                  className={`px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all ${
-                    isGlobalDisabled ? 'opacity-25 cursor-not-allowed text-slate-400' :
+                  className={`px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all ${isGlobalDisabled ? 'opacity-25 cursor-not-allowed text-slate-400' :
                     isActive ? 'bg-white text-slate-950 shadow-xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'
-                  }`}
+                    }`}
                 >
                   {scopeOption === 'local' ? 'Target Unit' : 'Global Net'}
                 </button>
@@ -159,11 +179,11 @@ const AdminDashboard = () => {
 
       {/* 2. THE MASTER SPLIT COMMAND LAYOUT */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
-        
+
         {/* LEFT COMPACT PANEL: Vitals & Core Indicators */}
         <div className="xl:col-span-1 space-y-4">
           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Telemetry Columns</p>
-          
+
           {/* Tile 1: Satisfaction Rating Index Block */}
           <div className={`bg-white border p-5 rounded-xl shadow-xs transition-all ${ratingStatus.border}`}>
             <div className="flex justify-between items-start mb-2">
@@ -232,10 +252,10 @@ const AdminDashboard = () => {
 
         {/* RIGHT CORE DASHBOARD AREA: Matrix Charts & Activity Streams */}
         <div className="xl:col-span-3 space-y-6">
-          
+
           {/* Dynamic Row Graph Engine Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
+
             {/* Area Chart: Holds 2/3 weight for trend linearity */}
             <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-xs lg:col-span-2">
               <div className="flex items-center justify-between mb-4">
@@ -298,11 +318,9 @@ const AdminDashboard = () => {
                   <p className="text-[8px] text-slate-400 font-bold uppercase mt-0.5">Real-time Response Sync Engine</p>
                 </div>
               </div>
-              <button className="flex items-center gap-1.5 border border-slate-200 text-[8px] font-black px-3 py-1.5 rounded-lg uppercase tracking-widest hover:bg-slate-50 transition-all active:scale-95">
-                <Download size={11} /> Export Matrix
-              </button>
+
             </div>
-            
+
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -317,7 +335,7 @@ const AdminDashboard = () => {
                   {submissions.length > 0 ? submissions.map((sub, i) => {
                     const calculatedScore = parseFloat(sub.avg_score || 0);
                     const isHighResult = calculatedScore >= 4.0;
-                    
+
                     return (
                       <tr key={sub.id || i} className="hover:bg-slate-50/60 transition-colors group">
                         <td className="px-5 py-3.5">

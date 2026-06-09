@@ -75,15 +75,16 @@ try {
                     COUNT(sub.id) as transactions
                 FROM arta_services s
                 LEFT JOIN offices o ON s.office_id = o.id
-                LEFT JOIN submissions sub ON s.id = sub.service_id";
+                LEFT JOIN submissions sub ON s.id = sub.service_id
+                WHERE s.is_active = 1";
 
         $params = [];
 
         if ($userRole === 'manager') {
-            $sql .= " WHERE o.plant_name = :pName";
+            $sql .= " AND o.plant_name = :pName";
             $params = ['pName' => $_SESSION['plant_name'] ?? ''];
         } elseif ($userRole === 'office') {
-            $sql .= " WHERE s.office_id = :offId";
+            $sql .= " AND s.office_id = :offId";
             $params = ['offId' => $userOfficeId];
         } elseif ($userRole === 'provisioned') {
             if (!empty($provisionedOfficeIds)) {
@@ -94,10 +95,10 @@ try {
                     $placeholders[] = ":$key";
                     $params[$key]   = $oid;
                 }
-                $sql .= " WHERE s.office_id IN (" . implode(',', $placeholders) . ")";
+                $sql .= " AND s.office_id IN (" . implode(',', $placeholders) . ")";
             } else {
                 // No offices assigned → return nothing
-                $sql .= " WHERE 1 = 0";
+                $sql .= " AND 1 = 0";
             }
         }
 
@@ -186,9 +187,11 @@ try {
             logAction($conn, $resolvedUserId, 'UPDATE', 'arta_services', "Updated Service ID: " . $data->id);
             echo json_encode(["status" => "success", "message" => "Service updated!"]);
         } else {
-            $stmt = $conn->prepare("DELETE FROM arta_services WHERE id = ?");
+            // Soft delete: mark inactive instead of removing the row.
+            // This preserves the service_name reference on all existing survey submissions.
+            $stmt = $conn->prepare("UPDATE arta_services SET is_active = 0 WHERE id = ?");
             $stmt->execute([$id]);
-            logAction($conn, $resolvedUserId, 'DELETE', 'arta_services', "Deleted Service ID: " . $id);
+            logAction($conn, $resolvedUserId, 'DELETE', 'arta_services', "Soft-deleted Service ID: " . $id);
             echo json_encode(["status" => "success", "message" => "Service removed!"]);
         }
     }

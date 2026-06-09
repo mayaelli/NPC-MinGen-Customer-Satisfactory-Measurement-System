@@ -1,3 +1,42 @@
+/**
+ * reports-page.jsx — Compliance Center Module
+ *
+ * Generates the four official ARTA/IMS compliance reports from survey data.
+ * This module is export-heavy — it uses html2canvas-pro, jsPDF, JSZip,
+ * SheetJS (xlsx), and FileSaver together.
+ *
+ * Report components (each lives in src/pages/reports/):
+ *   CCEvaluationTable  → MGG-IMS-006.F03 — Citizen's Charter awareness tally
+ *   SQDEvaluationTable → MGG-IMS-006.F04 — Service Quality Dimensions matrix
+ *   CSMTabulationTable → MGG-IMS-006.F02 — Submission count per service (INTERNAL/EXTERNAL split)
+ *   ScorePerService    → MGG-IMS-006.F05 — Satisfaction % per individual service
+ *
+ * Data flow:
+ *   `data` prop = survey submissions (pre-fetched by admin-pages.jsx, RBAC-scoped).
+ *   `allOffices` prop = full office list (used to resolve abbreviations for filenames).
+ *   All filtering (targetOffice, period, date range) is CLIENT-SIDE via reportData useMemo.
+ *   allPossibleServices is fetched separately from manage_services.php to populate
+ *   the "services with no clients" section in CSM Tabulation.
+ *
+ * Export methods:
+ *   handleDownloadCurrent  → captures reportRef (visible report) as single PDF
+ *   handleDownloadAll      → captures all 4 refs sequentially into one multi-page PDF
+ *   handleDownloadAllPDF   → same as above but as a ZIP of individual PDFs
+ *   handleDownloadExcel    → builds a 4-sheet Excel workbook via buildExcelWorkbook()
+ *   handleDownloadBundle   → Excel + all 4 PDFs in one ZIP (full audit package)
+ *
+ * Signatories:
+ *   Stored in localStorage under 'report_signatories' and auto-saved on change.
+ *   Passed as props to each report component to populate the signature block.
+ *   To add a new signatory slot, add a key here, update the SignatoryInput
+ *   component, and update each report component's footer section.
+ *
+ * isGlobalView flag:
+ *   Controls whether the office selector shows "All" + full office list or
+ *   just the user's assigned offices. Derived from role + hadMultipleOffices.
+ *   hadMultipleOffices is a fallback for provisioned users whose data already
+ *   spans multiple offices — avoids relying on stale localStorage values.
+ */
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import JSZip from 'jszip';

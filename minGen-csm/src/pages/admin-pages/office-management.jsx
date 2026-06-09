@@ -1,5 +1,49 @@
+/**
+ * office-management.jsx — Office Directory Module
+ *
+ * Manages NPC office records grouped by plant/department.
+ * Each office has exactly one linked user account in the users table.
+ *
+ * Key features:
+ *
+ * Registration form
+ *   Creates the office record in the offices table. The backend does NOT
+ *   automatically create a user account here — that is handled separately.
+ *   Duplicate name detection is done both client-side (isDuplicateName useMemo)
+ *   and server-side (DUPLICATE_NAME response code from manage_offices.php).
+ *
+ * Credential Terminal (selectedOffice modal)
+ *   Shows the office's assigned username and raw_password (the system-generated
+ *   plain-text password stored for admin reference). Once the office user changes
+ *   their password via change-password.jsx, raw_password is cleared server-side
+ *   and will show as "---" here. The Copy Credential Packet button copies both
+ *   username and password to clipboard as a formatted block.
+ *
+ * Auditor Toggle
+ *   Sets is_auditor_enabled = 1 on the offices table via POST { action: 'toggle_auditor' }.
+ *   When enabled, that office's user account gains read access to ALL plant data
+ *   instead of just their own office. This is checked in get_survey_results.php
+ *   before applying the RBAC WHERE clause.
+ *
+ * Reset Password
+ *   Calls PUT with { reset_password: true } — generates a new random password
+ *   in the format New{4digits}!{abbr} and stores both the hash and plain text.
+ *   The new password appears in the Credential Terminal after refreshing.
+ *
+ * Edit Office
+ *   Calls PUT with updated name, plant_name, abbreviation.
+ *   Does NOT affect the linked user account credentials.
+ *
+ * Delete Office
+ *   HARD DELETE — permanently removes the office row. This also cascades to
+ *   user_offices entries. The linked user account is NOT automatically deleted;
+ *   that requires a separate action in admin-management.jsx.
+ *   Use with caution — prefer not deleting offices that have existing submissions.
+ *
+ * API: manage_offices.php (GET, POST, PUT, DELETE)
+ */
 import React, { useState, useEffect, useMemo } from 'react';
-import { Building2, Search, Plus, ChevronDown, ChevronRight, Copy, RefreshCw, Trash2, ShieldCheck, UserCircle2, X, CheckCircle2, Lock, Globe, AlertCircle } from 'lucide-react';
+import { Building2, Search, ChevronRight, Copy, RefreshCw, Trash2, ShieldCheck, UserCircle2, X, CheckCircle2, Lock, Globe, AlertCircle, Pencil } from 'lucide-react';
 
 const OfficeManagement = () => {
   const [offices, setOffices] = useState([]);
@@ -12,8 +56,15 @@ const OfficeManagement = () => {
   const [copyStatus, setCopyStatus] = useState(null);
   const [formNotif, setFormNotif] = useState(null); // { type: 'success'|'error', message: '' }
   const [deleteModal, setDeleteModal] = useState(false);
+  const [officeToDelete, setOfficeToDelete] = useState(null);
   const [resetModal, setResetModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // ── Edit modal state ────────────────────────────────────────────────────────
+  const [editModal, setEditModal] = useState(false);
+  const [officeToEdit, setOfficeToEdit] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', abbreviation: '', plant_name: '' });
+  const [editNotif, setEditNotif] = useState(null);
 
   const isDuplicateName = useMemo(() => {
     if (!newOffice.name.trim() || !newOffice.plant_name.trim()) return false;
@@ -35,7 +86,10 @@ const OfficeManagement = () => {
       if (data.status === 'success') {
         setOffices(data.data);
         const firstPlant = data.data[0]?.plant_name;
-        if (firstPlant) setExpandedPlants({ [firstPlant]: true });
+        if (firstPlant) {
+          const allPlants = [...new Set(data.data.map(o => o.plant_name))];
+          setExpandedPlants(Object.fromEntries(allPlants.map(p => [p, true])));
+        }
       }
     } catch (err) { console.error("Fetch error:", err); }
   };
@@ -127,10 +181,11 @@ const OfficeManagement = () => {
   const confirmDelete = async () => {
     setActionLoading(true);
     try {
-      const response = await fetch(`${API_URL}?id=${selectedOffice.id}`, { method: 'DELETE' });
+      const response = await fetch(`${API_URL}?id=${officeToDelete.id}`, { method: 'DELETE' });
       const result = await response.json();
       if (result.status === 'success') {
         setDeleteModal(false);
+        setOfficeToDelete(null);
         setSelectedOffice(null);
         fetchOffices();
       } else {
@@ -138,6 +193,47 @@ const OfficeManagement = () => {
       }
     } catch (error) {
       console.error("Error deleting office:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const openEditModal = (office, e) => {
+    e.stopPropagation(); // prevent the card click from opening the credential modal
+    setOfficeToEdit(office);
+    setEditForm({ name: office.name, abbreviation: office.abbreviation, plant_name: office.plant_name });
+    setEditNotif(null);
+    setEditModal(true);
+  };
+
+  const confirmEdit = async () => {
+    if (!editForm.name.trim() || !editForm.plant_name.trim() || !editForm.abbreviation.trim()) {
+      setEditNotif({ type: 'error', message: 'All fields are required.' });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const response = await fetch(API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: officeToEdit.id,
+          name: editForm.name,
+          abbreviation: editForm.abbreviation,
+          plant_name: editForm.plant_name,
+          description: officeToEdit.description ?? '',
+        }),
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setEditModal(false);
+        setOfficeToEdit(null);
+        fetchOffices();
+      } else {
+        setEditNotif({ type: 'error', message: result.message || 'Update failed.' });
+      }
+    } catch (err) {
+      setEditNotif({ type: 'error', message: 'Network error. Please try again.' });
     } finally {
       setActionLoading(false);
     }
@@ -263,15 +359,14 @@ const OfficeManagement = () => {
           <div className="flex-1 h-px bg-slate-200"></div>
         </div>
 
-        <form onSubmit={handleAddOffice} className="px-5 py-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-x-6 gap-y-3">
+        <form onSubmit={handleAddOffice} className="px-5 py-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3">
 
           {/* Inline notification banner */}
           {formNotif && (
-            <div className={`col-span-full flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-bold border animate-in fade-in duration-200 ${
-              formNotif.type === 'success'
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : 'bg-red-50 text-red-700 border-red-200'
-            }`}>
+            <div className={`col-span-full flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-bold border animate-in fade-in duration-200 ${formNotif.type === 'success'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-red-50 text-red-700 border-red-200'
+              }`}>
               {formNotif.type === 'success' ? <CheckCircle2 size={12} className="shrink-0" /> : <AlertCircle size={12} className="shrink-0" />}
               <span className="flex-1">{formNotif.message}</span>
               <button type="button" onClick={() => setFormNotif(null)} className="p-0.5 hover:opacity-60 transition-opacity"><X size={11} /></button>
@@ -279,7 +374,7 @@ const OfficeManagement = () => {
           )}
 
           <div className="space-y-1">
-            <label className="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-1"><Globe size={9} /> Plant Location</label>
+            <label className="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-1"><Globe size={9} /> Plant Loc/Dept</label>
             <input type="text" list="plant-list" className="w-full pb-1.5 bg-transparent border-0 border-b border-slate-300 focus:border-blue-500 text-[11px] font-black outline-none transition-colors placeholder:text-slate-300" value={newOffice.plant_name} onChange={(e) => { setNewOffice({ ...newOffice, plant_name: e.target.value.toUpperCase() }); setFormNotif(null); }} required />
             <datalist id="plant-list">
               {[...new Set(offices.map(o => o.plant_name))].map(d => <option key={d} value={d} />)}
@@ -290,9 +385,8 @@ const OfficeManagement = () => {
             <label className="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-1"><Building2 size={9} /> Office Designation</label>
             <input
               type="text"
-              className={`w-full pb-1.5 bg-transparent border-0 border-b text-[11px] font-black outline-none transition-colors placeholder:text-slate-300 ${
-                isDuplicateName ? 'border-amber-400 focus:border-amber-500' : 'border-slate-300 focus:border-blue-500'
-              }`}
+              className={`w-full pb-1.5 bg-transparent border-0 border-b text-[11px] font-black outline-none transition-colors placeholder:text-slate-300 ${isDuplicateName ? 'border-amber-400 focus:border-amber-500' : 'border-slate-300 focus:border-blue-500'
+                }`}
               value={newOffice.name}
               onChange={(e) => { setNewOffice({ ...newOffice, name: e.target.value }); setFormNotif(null); }}
               required
@@ -309,15 +403,8 @@ const OfficeManagement = () => {
             <label className="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-1"><Lock size={9} /> Abbreviation</label>
             <input type="text" className="w-full pb-1.5 bg-transparent border-0 border-b border-slate-300 focus:border-blue-500 text-[11px] font-black uppercase outline-none transition-colors placeholder:text-slate-300" value={newOffice.abbreviation} onChange={(e) => setNewOffice({ ...newOffice, abbreviation: e.target.value.toUpperCase() })} required />
           </div>
-          <div className="space-y-1">
-            <label className="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-1"><ChevronDown size={9} /> Hierarchy Level</label>
-            <select className="w-full pb-1.5 bg-transparent border-0 border-b border-slate-300 focus:border-blue-500 text-[11px] font-black outline-none transition-colors appearance-none cursor-pointer" value={newOffice.parent_id} onChange={(e) => setNewOffice({ ...newOffice, parent_id: e.target.value })}>
-              <option value="">ROOT ENTITY</option>
-              {offices.filter(o => o.plant_name === newOffice.plant_name && !o.parent_id).map(off => (
-                <option key={off.id} value={off.id}>{off.name}</option>
-              ))}
-            </select>
-          </div>
+          {/* Parent office selector - hidden input, parent_id defaults to empty (top-level) */}
+          <input type="hidden" value={newOffice.parent_id} />
           <div className="flex items-end pb-1">
             <button
               disabled={loading || isDuplicateName}
@@ -388,11 +475,18 @@ const OfficeManagement = () => {
                       <div className="flex items-center gap-2 shrink-0 ml-3">
                         <span className="text-[9px] font-medium text-slate-300 tracking-[0.15em] tabular-nums">#{office.id}</span>
                         <button
-                          onClick={() => setSelectedOffice(office)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 bg-transparent hover:bg-white transition-all hover:shadow-sm"
-                          title="Access Configuration"
+                          onClick={(e) => openEditModal(office, e)}
+                          className="p-1.5 rounded-lg text-slate-300 hover:text-blue-500 bg-transparent hover:bg-blue-50 transition-all"
+                          title="Edit Office"
                         >
-                          <UserCircle2 size={14} />
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          onClick={() => { setOfficeToDelete(office); setDeleteModal(true); }}
+                          className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 bg-transparent hover:bg-red-50 transition-all"
+                          title="Delete Office"
+                        >
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </div>
@@ -410,7 +504,7 @@ const OfficeManagement = () => {
       </div>
 
       {/* CREDENTIAL TERMINAL (MODAL) */}
-      {selectedOffice && (
+      {selectedOffice && !deleteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#001d3d]/80 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -490,7 +584,7 @@ const OfficeManagement = () => {
         </div>
       )}
       {/* DELETE CONFIRMATION MODAL */}
-      {deleteModal && selectedOffice && (
+      {deleteModal && officeToDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
@@ -503,20 +597,20 @@ const OfficeManagement = () => {
                   <p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Destructive action</p>
                 </div>
               </div>
-              <button onClick={() => setDeleteModal(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+              <button onClick={() => { setDeleteModal(false); setOfficeToDelete(null); }} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
                 <X size={15} className="text-slate-400" />
               </button>
             </div>
             <div className="px-6 py-5 space-y-3">
               <p className="text-[12px] text-slate-500 leading-relaxed">You are about to permanently delete this office and all associated records:</p>
               <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 space-y-0.5">
-                <p className="text-[12px] font-black text-red-800 uppercase">{selectedOffice.name}</p>
-                <p className="text-[10px] text-red-400 font-medium uppercase tracking-widest">{selectedOffice.plant_name} — {selectedOffice.abbreviation}</p>
+                <p className="text-[12px] font-black text-red-800 uppercase">{officeToDelete.name}</p>
+                <p className="text-[10px] text-red-400 font-medium uppercase tracking-widest">{officeToDelete.plant_name} — {officeToDelete.abbreviation}</p>
               </div>
               <p className="text-[10px] text-slate-400 italic">This includes all linked user accounts and survey services. This cannot be undone.</p>
             </div>
             <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
-              <button onClick={() => setDeleteModal(false)} disabled={actionLoading} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all disabled:opacity-50">Cancel</button>
+              <button onClick={() => { setDeleteModal(false); setOfficeToDelete(null); }} disabled={actionLoading} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all disabled:opacity-50">Cancel</button>
               <button onClick={confirmDelete} disabled={actionLoading} className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5">
                 <Trash2 size={11} /> {actionLoading ? 'Deleting...' : 'Wipe Permanently'}
               </button>
@@ -557,6 +651,98 @@ const OfficeManagement = () => {
                 <RefreshCw size={11} /> {actionLoading ? 'Resetting...' : 'Reset Password'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* EDIT OFFICE MODAL */}
+      {editModal && officeToEdit && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center">
+                  <Pencil size={15} className="text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-[13px] font-black text-slate-800 uppercase tracking-tight">Edit Office</h2>
+                  <p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Update details</p>
+                </div>
+              </div>
+              <button onClick={() => setEditModal(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                <X size={15} className="text-slate-400" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="px-6 py-5 space-y-4">
+              {editNotif && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-bold border bg-red-50 text-red-700 border-red-200 animate-in fade-in duration-150">
+                  <AlertCircle size={11} className="shrink-0" />
+                  <span>{editNotif.message}</span>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                  <Globe size={9} /> Plant / Department
+                </label>
+                <input
+                  type="text"
+                  list="edit-plant-list"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-black uppercase outline-none focus:border-blue-500 focus:bg-white transition-all"
+                  value={editForm.plant_name}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, plant_name: e.target.value.toUpperCase() }))}
+                />
+                <datalist id="edit-plant-list">
+                  {[...new Set(offices.map(o => o.plant_name))].map(d => <option key={d} value={d} />)}
+                </datalist>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                  <Building2 size={9} /> Office Name
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-black uppercase outline-none focus:border-blue-500 focus:bg-white transition-all"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                  <Lock size={9} /> Abbreviation
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-black uppercase outline-none focus:border-blue-500 focus:bg-white transition-all"
+                  value={editForm.abbreviation}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, abbreviation: e.target.value.toUpperCase() }))}
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setEditModal(false)}
+                disabled={actionLoading}
+                className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmEdit}
+                disabled={actionLoading}
+                className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <CheckCircle2 size={11} /> {actionLoading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+
           </div>
         </div>
       )}

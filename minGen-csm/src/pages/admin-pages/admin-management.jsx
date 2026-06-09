@@ -1,3 +1,47 @@
+/**
+ * admin-management.jsx — Identity Provisioning Dashboard
+ *
+ * Allows super admins (and provisioned users with admin_* permissions) to
+ * manage NPC employee system access.
+ *
+ * Two-step provisioning model:
+ *   1. Add to Employee Directory — enter full name, system auto-generates
+ *      an NPC email (generateEmail) and a password. The employee exists in
+ *      employee_directory but has NO login access yet.
+ *   2. Provision — search the directory, assign office scopes and permissions,
+ *      then submit. This creates a users row with role='provisioned' and
+ *      inserts rows into user_offices and user_permissions.
+ *
+ * OfficeChipSelector component:
+ *   Multi-select chip input for assigning office scopes. Supports individual
+ *   offices or the __all__ sentinel which means "every office in the system".
+ *   The __all__ sentinel is resolved to real office IDs by resolveOfficeIds()
+ *   before any API call — the backend never sees '__all__'.
+ *   NOTE: resolveOfficeIds deduplicates the allOffices list before mapping IDs
+ *   to prevent duplicate key violations on the user_offices PRIMARY KEY.
+ *
+ * PermissionChecklist component:
+ *   Renders the PERMISSIONS array as grouped checkboxes. The "Full Access"
+ *   toggle for a group selects all items in that group at once.
+ *   Permission keys defined in the PERMISSIONS array must exactly match what
+ *   the PHP endpoints check in user_permissions. If you add a new permission,
+ *   add it here AND add the corresponding check in the relevant PHP endpoint.
+ *
+ * Activity Log:
+ *   Polls manage_provisioned_users.php?action=logs every 6 seconds via setInterval.
+ *   Shows the last 30 rows from activity_logs. The interval is cleared on unmount.
+ *
+ * generateEmail function:
+ *   Converts a full name to NPC email format:
+ *   "Norvin Dennis M. Angeles" → ndmangeles@napocor.gov.ph
+ *   (first initial + middle initials + last name + @napocor.gov.ph)
+ *   Used as a preview while typing the name in the Add Personnel form.
+ *
+ * API endpoints used:
+ *   manage_employee_directory.php — add/search employee directory
+ *   manage_provisioned_users.php  — provision/edit/revoke/restore/delete accounts
+ *   manage_offices.php            — fetch office list for OfficeChipSelector
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import {
@@ -18,7 +62,7 @@ const PERMISSIONS = [
         group: 'Survey Results',
         items: [
             { key: 'view_results', label: 'View Results' },
-            { key: 'export_data',  label: 'Export Data'  },
+            { key: 'export_data', label: 'Export Data' },
         ],
     },
     {
@@ -30,34 +74,34 @@ const PERMISSIONS = [
     {
         group: 'ARTA Services',
         items: [
-            { key: 'services_create', label: 'Add Service'    },
-            { key: 'services_edit',   label: 'Edit Service'   },
+            { key: 'services_create', label: 'Add Service' },
+            { key: 'services_edit', label: 'Edit Service' },
             { key: 'services_delete', label: 'Delete Service' },
         ],
     },
     {
         group: 'Offices',
         items: [
-            { key: 'offices_create', label: 'Add Office'    },
-            { key: 'offices_edit',   label: 'Edit Office'   },
+            { key: 'offices_create', label: 'Add Office' },
+            { key: 'offices_edit', label: 'Edit Office' },
             { key: 'offices_delete', label: 'Delete Office' },
         ],
     },
     {
         group: 'Admin Management',
         items: [
-            { key: 'admin_provision', label: 'Provision Users'     },
-            { key: 'admin_edit',      label: 'Edit User Access'    },
-            { key: 'admin_revoke',    label: 'Revoke / Restore'    },
+            { key: 'admin_provision', label: 'Provision Users' },
+            { key: 'admin_edit', label: 'Edit User Access' },
+            { key: 'admin_revoke', label: 'Revoke / Restore' },
         ],
     },
 ];
 
 const BASE = 'http://localhost/MinGen%20CSM/minGen-api';
-const API_DIR   = `${BASE}/survey/manage_employee_directory.php`;
-const API_PROV  = `${BASE}/survey/manage_provisioned_users.php`;
-const API_OFF   = `${BASE}/survey/manage_offices.php`;
-const OPTS      = { withCredentials: true };
+const API_DIR = `${BASE}/survey/manage_employee_directory.php`;
+const API_PROV = `${BASE}/survey/manage_provisioned_users.php`;
+const API_OFF = `${BASE}/survey/manage_offices.php`;
+const OPTS = { withCredentials: true };
 
 const getUid = () => JSON.parse(localStorage.getItem('user') || '{}')?.id || '';
 
@@ -66,18 +110,18 @@ const ALL_SENTINEL = { office_id: '__all__', office_name: 'All Offices / Departm
 
 const OfficeChipSelector = ({ allOffices, selected, onChange }) => {
     const [query, setQuery] = useState('');
-    const [open, setOpen]   = useState(false);
-    const wrapRef           = useRef(null);
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef(null);
 
-    const hasAll   = selected.some(s => s.office_id === '__all__');
+    const hasAll = selected.some(s => s.office_id === '__all__');
     const filtered = hasAll ? [] : allOffices.filter(
         o => !selected.find(s => s.office_id === o.id) &&
-             (o.name.toLowerCase().includes(query.toLowerCase()) ||
-              (o.abbreviation || '').toLowerCase().includes(query.toLowerCase()))
+            (o.name.toLowerCase().includes(query.toLowerCase()) ||
+                (o.abbreviation || '').toLowerCase().includes(query.toLowerCase()))
     );
 
-    const add    = (o)  => { onChange([...selected, { office_id: o.id, office_name: o.name, abbreviation: o.abbreviation }]); setQuery(''); setOpen(false); };
-    const addAll = ()   => { onChange([ALL_SENTINEL]); setQuery(''); setOpen(false); };
+    const add = (o) => { onChange([...selected, { office_id: o.id, office_name: o.name, abbreviation: o.abbreviation }]); setQuery(''); setOpen(false); };
+    const addAll = () => { onChange([ALL_SENTINEL]); setQuery(''); setOpen(false); };
     const remove = (id) => onChange(selected.filter(s => s.office_id !== id));
 
     useEffect(() => {
@@ -163,7 +207,7 @@ const PermissionChecklist = ({ selected, onChange }) => {
 
     const toggleFullAccess = (group) => {
         const allKeys = group.items.map(i => i.key);
-        const isFull  = allKeys.every(k => selected.includes(k));
+        const isFull = allKeys.every(k => selected.includes(k));
         if (isFull) {
             // Deselect all items in this group
             onChange(selected.filter(p => !allKeys.includes(p)));
@@ -177,8 +221,8 @@ const PermissionChecklist = ({ selected, onChange }) => {
     return (
         <div className="space-y-4">
             {PERMISSIONS.map(group => {
-                const allKeys    = group.items.map(i => i.key);
-                const isFull     = allKeys.every(k => selected.includes(k));
+                const allKeys = group.items.map(i => i.key);
+                const isFull = allKeys.every(k => selected.includes(k));
 
                 return (
                     <div key={group.group}>
@@ -190,11 +234,10 @@ const PermissionChecklist = ({ selected, onChange }) => {
                             <button
                                 type="button"
                                 onClick={() => toggleFullAccess(group)}
-                                className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[7px] font-black uppercase tracking-wider transition-all ${
-                                    isFull
-                                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                                        : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-400 hover:text-indigo-500'
-                                }`}
+                                className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[7px] font-black uppercase tracking-wider transition-all ${isFull
+                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                                    : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-400 hover:text-indigo-500'
+                                    }`}
                             >
                                 {isFull && <CheckMark />}
                                 Full Access
@@ -206,17 +249,15 @@ const PermissionChecklist = ({ selected, onChange }) => {
                             {group.items.map(item => (
                                 <label
                                     key={item.key}
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                                        isFull
-                                            ? 'bg-slate-900 border-slate-900 text-white opacity-60 cursor-not-allowed'
-                                            : selected.includes(item.key)
-                                                ? 'bg-slate-900 border-slate-900 text-white cursor-pointer'
-                                                : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 cursor-pointer'
-                                    }`}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${isFull
+                                        ? 'bg-slate-900 border-slate-900 text-white opacity-60 cursor-not-allowed'
+                                        : selected.includes(item.key)
+                                            ? 'bg-slate-900 border-slate-900 text-white cursor-pointer'
+                                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 cursor-pointer'
+                                        }`}
                                 >
-                                    <div className={`w-3 h-3 rounded border flex items-center justify-center shrink-0 transition-all ${
-                                        selected.includes(item.key) ? 'bg-white border-white text-slate-900' : 'border-slate-300'
-                                    }`}>
+                                    <div className={`w-3 h-3 rounded border flex items-center justify-center shrink-0 transition-all ${selected.includes(item.key) ? 'bg-white border-white text-slate-900' : 'border-slate-300'
+                                        }`}>
                                         {selected.includes(item.key) && <CheckMark />}
                                     </div>
                                     <input
@@ -239,7 +280,7 @@ const PermissionChecklist = ({ selected, onChange }) => {
 
 const CredentialRow = ({ label, value, mono, highlight, secret }) => {
     const [copied, setCopied] = useState(false);
-    const [show, setShow]     = useState(!secret);
+    const [show, setShow] = useState(!secret);
     const copy = () => { navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500); };
     return (
         <div className="space-y-0.5">
@@ -274,25 +315,25 @@ const Toast = ({ msg, type }) => {
 
 const AdminManagement = () => {
     const [allOffices, setAllOffices] = useState([]);
-    const [loading, setLoading]       = useState(true);
-    const [toast, setToast]           = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [toast, setToast] = useState(null);
     const [activeUsers, setActiveUsers] = useState([]);
     const [revokedUsers, setRevokedUsers] = useState([]);
-    const [logs, setLogs]             = useState([]);
-    const [dirStats, setDirStats]     = useState({ total: 0, last_import: null });
+    const [logs, setLogs] = useState([]);
+    const [dirStats, setDirStats] = useState({ total: 0, last_import: null });
 
-    const [addEmpName, setAddEmpName]         = useState('');
-    const [addEmpLoading, setAddEmpLoading]   = useState(false);
-    const [directoryList, setDirectoryList]   = useState([]);
+    const [addEmpName, setAddEmpName] = useState('');
+    const [addEmpLoading, setAddEmpLoading] = useState(false);
+    const [directoryList, setDirectoryList] = useState([]);
     const [newEmpCredentials, setNewEmpCredentials] = useState(null); // { name, email, password, employee_id }
-    const [viewCredsUser, setViewCredsUser]         = useState(null); // provisioned user whose creds to display
-    const [copiedPacket, setCopiedPacket]           = useState(false);
+    const [viewCredsUser, setViewCredsUser] = useState(null); // provisioned user whose creds to display
+    const [copiedPacket, setCopiedPacket] = useState(false);
 
     const copyCredPacket = ({ name, employee_id, dir_employee_id, email, password, raw_password }) => {
-        const id   = employee_id || dir_employee_id || '—';
-        const pass = password    || raw_password    || '—';
+        const id = employee_id || dir_employee_id || '—';
+        const pass = password || raw_password || '—';
         const text =
-`NPC Mindanao Generation — CSM System Credentials
+            `NPC Mindanao Generation — CSM System Credentials
 ==================================================
 Name:        ${name || '—'}
 Employee ID: ${id}
@@ -304,19 +345,20 @@ Password:    ${pass}
         setTimeout(() => setCopiedPacket(false), 2000);
     };
 
-    const [provSearch, setProvSearch]         = useState('');
+    const [provSearch, setProvSearch] = useState('');
     const [provSearchResults, setProvSearchResults] = useState([]);
-    const [provSearching, setProvSearching]         = useState(false);
-    const [selectedEmp, setSelectedEmp]       = useState(null);
-    const [provOffices, setProvOffices]       = useState([]);
-    const [provPerms, setProvPerms]           = useState([]);
+    const [provSearching, setProvSearching] = useState(false);
+    const [selectedEmp, setSelectedEmp] = useState(null);
+    const [provOffices, setProvOffices] = useState([]);
+    const [provPerms, setProvPerms] = useState([]);
 
-    const [activePage, setActivePage]     = useState(1);
-    const ACTIVE_PAGE_SIZE                = 5;
+    const [activePage, setActivePage] = useState(1);
+    const ACTIVE_PAGE_SIZE = 5;
+    const [activeSearch, setActiveSearch] = useState('');
 
-    const [editModal, setEditModal]       = useState(null);
-    const [editOffices, setEditOffices]   = useState([]);
-    const [editPerms, setEditPerms]       = useState([]);
+    const [editModal, setEditModal] = useState(null);
+    const [editOffices, setEditOffices] = useState([]);
+    const [editPerms, setEditPerms] = useState([]);
     const [editPassword, setEditPassword] = useState('');
     const [showEditPass, setShowEditPass] = useState(false);
 
@@ -352,8 +394,8 @@ Password:    ${pass}
                 });
                 setAllOffices(uniqueOffices);
             }
-            if (logsRes.data.status    === 'success') setLogs(logsRes.data.data || []);
-            if (usersRes.data.status   === 'success') {
+            if (logsRes.data.status === 'success') setLogs(logsRes.data.data || []);
+            if (usersRes.data.status === 'success') {
                 setActiveUsers(usersRes.data.data.filter(u => u.is_active == 1));
                 setRevokedUsers(usersRes.data.data.filter(u => u.is_active == 0));
             }
@@ -361,17 +403,18 @@ Password:    ${pass}
         } catch (err) { showToast('Network sync error fetching data components.', 'error'); } finally { setLoading(false); }
     };
 
-    useEffect(() => { 
+    useEffect(() => {
         fetchAll();
         const interval = setInterval(() => {
             axios.get(`${API_PROV}?user_id=${getUid()}&action=logs`, OPTS)
-                 .then(res => { if (res.data?.status === 'success') setLogs(res.data.data || []); })
-                 .catch(() => {}); // silent — don't crash if log poll fails
+                .then(res => { if (res.data?.status === 'success') setLogs(res.data.data || []); })
+                .catch(() => { }); // silent — don't crash if log poll fails
         }, 6000);
         return () => clearInterval(interval);
     }, []);
 
     useEffect(() => { setActivePage(1); }, [activeUsers]);
+    useEffect(() => { setActivePage(1); }, [activeSearch]);
 
     useEffect(() => {
         if (provSearch.length < 2) { setProvSearchResults([]); return; }
@@ -391,10 +434,10 @@ Password:    ${pass}
     const generateEmail = (fullName) => {
         const parts = fullName.trim().split(/\s+/).filter(Boolean);
         if (parts.length < 2) return '';
-        const firstInitial  = parts[0][0].toLowerCase();
-        const lastName      = parts[parts.length - 1].replace(/[^a-zA-Z]/g, '').toLowerCase();
+        const firstInitial = parts[0][0].toLowerCase();
+        const lastName = parts[parts.length - 1].replace(/[^a-zA-Z]/g, '').toLowerCase();
         if (!lastName) return '';
-        const middleParts   = parts.slice(1, -1);
+        const middleParts = parts.slice(1, -1);
         const middleInitials = middleParts.map(p => p[0].toLowerCase()).join('');
         return `${firstInitial}${middleInitials}${lastName}@napocor.gov.ph`;
     };
@@ -513,7 +556,7 @@ Password:    ${pass}
             </header>
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 px-8 py-6 items-start flex-grow">
-                
+
                 {/* LEFT SYSTEM RUNTIME UTILITIES COLUMN */}
                 <div className="xl:col-span-4 space-y-6">
 
@@ -605,18 +648,17 @@ Password:    ${pass}
                                     )}
                                     {visible.map(emp => {
                                         const alreadyActive = emp.is_provisioned == 1;
-                                        const isSelected    = selectedEmp?.id === emp.id;
+                                        const isSelected = selectedEmp?.id === emp.id;
                                         return (
                                             <button
                                                 key={emp.id}
                                                 type="button"
                                                 disabled={alreadyActive}
                                                 onClick={() => { if (!alreadyActive) { setSelectedEmp(emp); setProvSearch(''); } }}
-                                                className={`w-full text-left px-5 py-2.5 flex items-center justify-between group transition-colors ${
-                                                    isSelected    ? 'bg-indigo-50' :
+                                                className={`w-full text-left px-5 py-2.5 flex items-center justify-between group transition-colors ${isSelected ? 'bg-indigo-50' :
                                                     alreadyActive ? 'cursor-not-allowed bg-slate-50/60 opacity-70' :
-                                                    'hover:bg-slate-50'
-                                                }`}
+                                                        'hover:bg-slate-50'
+                                                    }`}
                                             >
                                                 <div className="min-w-0">
                                                     <p className={`text-[11px] font-bold truncate transition-colors ${isSelected ? 'text-indigo-700' : alreadyActive ? 'text-slate-400' : 'text-slate-800 group-hover:text-indigo-600'}`}>{emp.name}</p>
@@ -662,7 +704,7 @@ Password:    ${pass}
 
                 {/* RIGHT COLUMN: ASSIGNMENT INTERFACE & OPERATIONAL REGISTRIES */}
                 <div className="xl:col-span-8 space-y-6">
-                    
+
                     {selectedEmp && (
                         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-5 animate-in fade-in slide-in-from-top-1 duration-200">
                             <div>
@@ -679,24 +721,24 @@ Password:    ${pass}
                                     </div>
                                 </div>
                             ) : (
-                            <form onSubmit={handleProvision} className="space-y-5">
-                                <div className="space-y-1.5">
-                                    <label className="text-[8px] font-black uppercase tracking-widest text-slate-400 block">Functional Scope Channels (Offices)</label>
-                                    <OfficeChipSelector allOffices={allOffices} selected={provOffices} onChange={setProvOffices} />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-[8px] font-black uppercase tracking-widest text-slate-400 block">Feature Capability Authorization Vectors (Permissions)</label>
-                                    <PermissionChecklist selected={provPerms} onChange={setProvPerms} />
-                                </div>
-                                <div className="flex gap-2 pt-2 border-t border-slate-100">
-                                    <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all">
-                                        Generate Active Verification Token
-                                    </button>
-                                    <button type="button" onClick={() => setSelectedEmp(null)} className="px-4 py-2 border border-slate-200 text-slate-500 hover:bg-slate-50 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all">
-                                        Cancel
-                                    </button>
-                                </div>
-                            </form>
+                                <form onSubmit={handleProvision} className="space-y-5">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[8px] font-black uppercase tracking-widest text-slate-400 block">Functional Scope Channels (Offices)</label>
+                                        <OfficeChipSelector allOffices={allOffices} selected={provOffices} onChange={setProvOffices} />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[8px] font-black uppercase tracking-widest text-slate-400 block">Feature Capability Authorization Vectors (Permissions)</label>
+                                        <PermissionChecklist selected={provPerms} onChange={setProvPerms} />
+                                    </div>
+                                    <div className="flex gap-2 pt-2 border-t border-slate-100">
+                                        <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all">
+                                            Generate Active Verification Token
+                                        </button>
+                                        <button type="button" onClick={() => setSelectedEmp(null)} className="px-4 py-2 border border-slate-200 text-slate-500 hover:bg-slate-50 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </form>
                             )}
                         </div>
                     )}
@@ -704,21 +746,50 @@ Password:    ${pass}
                     {/* DATA REPOSITORIES (ACTIVE / REVOKED ACCOUNTS WINDOWS) */}
                     {['Active Access Channels', 'Revoked Context Nodes'].map((title, idx) => {
                         const targetActive = idx === 0;
-                        const fullList     = targetActive ? activeUsers : revokedUsers;
-                        const totalPages   = targetActive ? Math.max(1, Math.ceil(fullList.length / ACTIVE_PAGE_SIZE)) : 1;
-                        const userList     = targetActive
+                        const rawList = targetActive ? activeUsers : revokedUsers;
+                        const fullList = targetActive && activeSearch.trim()
+                            ? rawList.filter(u => {
+                                const q = activeSearch.toLowerCase();
+                                return (u.name || '').toLowerCase().includes(q)
+                                    || (u.email || '').toLowerCase().includes(q)
+                                    || (u.position || '').toLowerCase().includes(q)
+                                    || (u.department || '').toLowerCase().includes(q);
+                            })
+                            : rawList;
+                        const totalPages = targetActive ? Math.max(1, Math.ceil(fullList.length / ACTIVE_PAGE_SIZE)) : 1;
+                        const userList = targetActive
                             ? fullList.slice((activePage - 1) * ACTIVE_PAGE_SIZE, activePage * ACTIVE_PAGE_SIZE)
                             : fullList;
                         return (
                             <div key={title} className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-                                <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
+                                <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between gap-4">
                                     <div>
                                         <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">{title}</h3>
                                         <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">{targetActive ? 'Active permission matrices inside system' : 'Terminated structural keys'}</p>
                                     </div>
-                                    <span className={`px-2 py-0.5 rounded text-[8px] font-mono font-bold ${targetActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
-                                        {fullList.length} Nodes
-                                    </span>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        {/* Search — Active Access Channels only */}
+                                        {targetActive && (
+                                            <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg focus-within:border-slate-400 transition-all">
+                                                <Search size={11} className="text-slate-400 shrink-0" />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Search users..."
+                                                    value={activeSearch}
+                                                    onChange={e => setActiveSearch(e.target.value)}
+                                                    className="text-[10px] font-bold outline-none bg-transparent text-slate-700 placeholder:text-slate-300 w-36"
+                                                />
+                                                {activeSearch && (
+                                                    <button onClick={() => setActiveSearch('')} className="text-slate-300 hover:text-slate-500 transition-colors">
+                                                        <X size={10} strokeWidth={3} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                        <span className={`px-2 py-0.5 rounded text-[8px] font-mono font-bold ${targetActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
+                                            {fullList.length} Nodes
+                                        </span>
+                                    </div>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full border-collapse text-left">
@@ -736,51 +807,76 @@ Password:    ${pass}
                                             )}
                                             {userList.map(user => (
                                                 <tr key={user.id} className="hover:bg-slate-50/30 transition-colors group">
-                                                    <td className="px-6 py-3.5">
+                                                    {/* Security Target */}
+                                                    <td className="px-4 py-2.5">
                                                         <div className="flex items-center gap-2">
                                                             <div className="min-w-0">
-                                                                <p className="font-black text-slate-900 uppercase tracking-tight group-hover:text-indigo-600 transition-colors">{user.name}</p>
-                                                                <p className="text-[8px] text-slate-400 font-mono mt-0.5">{user.email}</p>
-                                                                <p className="text-[8px] text-slate-400 font-bold uppercase mt-0.5">{user.position} &middot; <span className="text-slate-500">{user.department}</span></p>
+                                                                <p className="font-black text-slate-900 uppercase tracking-tight text-[11px] group-hover:text-indigo-600 transition-colors">{user.name}</p>
+                                                                <p className="text-[8px] text-slate-400 font-mono">{user.email}</p>
                                                             </div>
                                                             <button
                                                                 onClick={() => setViewCredsUser(user)}
-                                                                className="shrink-0 p-1.5 rounded-md border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-all"
+                                                                className="shrink-0 p-1 rounded border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-all"
                                                                 title="View credentials"
                                                             >
-                                                                <Eye size={11} strokeWidth={2.5} />
+                                                                <Eye size={10} strokeWidth={2.5} />
                                                             </button>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-3.5 max-w-[180px]">
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {user.offices?.length > 0 ? user.offices.map(o => (
-                                                                <span key={o.office_id} className="bg-white border border-slate-200 text-slate-700 text-[8px] font-black uppercase tracking-tight px-1.5 py-0.5 rounded">
-                                                                    {o.abbreviation || o.office_name}
-                                                                </span>
-                                                            )) : <span className="text-slate-300 font-mono text-[10px]">—</span>}
+
+                                                    {/* Office Scope — show max 2 chips + overflow count */}
+                                                    <td className="px-4 py-2.5">
+                                                        <div className="flex flex-wrap gap-1 max-w-[160px]">
+                                                            {user.offices?.length > 0 ? (
+                                                                <>
+                                                                    {user.offices.slice(0, 2).map(o => (
+                                                                        <span key={o.office_id} className="bg-white border border-slate-200 text-slate-700 text-[8px] font-black uppercase px-1.5 py-0.5 rounded">
+                                                                            {o.abbreviation || o.office_name}
+                                                                        </span>
+                                                                    ))}
+                                                                    {user.offices.length > 2 && (
+                                                                        <span className="text-[8px] font-black text-slate-400 px-1.5 py-0.5 border border-dashed border-slate-200 rounded">
+                                                                            +{user.offices.length - 2}
+                                                                        </span>
+                                                                    )}
+                                                                </>
+                                                            ) : <span className="text-slate-300 font-mono text-[10px]">—</span>}
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-3.5 max-w-[200px]">
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {user.permissions?.length > 0 ? user.permissions.map(p => (
-                                                                <span key={p} className="bg-slate-900 text-white text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded">
-                                                                    {p.replace(/_/g, ' ')}
+
+                                                    {/* Permissions — count badge + first 2 visible */}
+                                                    <td className="px-4 py-2.5">
+                                                        {user.permissions?.length > 0 ? (
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className="bg-slate-900 text-white text-[7px] font-black uppercase px-1.5 py-0.5 rounded-full">
+                                                                    {user.permissions.length} perms
                                                                 </span>
-                                                            )) : <span className="text-[8px] font-black uppercase text-slate-300">Global Trainee</span>}
-                                                        </div>
+                                                                {user.permissions.slice(0, 2).map(p => (
+                                                                    <span key={p} className="bg-slate-100 text-slate-600 text-[7px] font-black uppercase tracking-tight px-1.5 py-0.5 rounded">
+                                                                        {p.replace(/_/g, ' ')}
+                                                                    </span>
+                                                                ))}
+                                                                {user.permissions.length > 2 && (
+                                                                    <span className="text-[7px] font-black text-slate-400">+{user.permissions.length - 2}</span>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-[8px] font-black uppercase text-slate-300">None</span>
+                                                        )}
                                                     </td>
-                                                    <td className="px-6 py-3.5 text-right">
+
+                                                    {/* Actions */}
+                                                    <td className="px-4 py-2.5 text-right">
                                                         <div className="flex items-center justify-end gap-1.5">
-                                                            <button onClick={() => openEditModal(user)} className="p-1.5 rounded-md border border-slate-200 hover:border-slate-900 hover:bg-slate-50 text-slate-400 hover:text-slate-900 transition-all" title="Override Configuration Overlays">
+                                                            <button onClick={() => openEditModal(user)} className="p-1.5 rounded border border-slate-200 hover:border-slate-900 hover:bg-slate-50 text-slate-400 hover:text-slate-900 transition-all" title="Edit">
                                                                 <Pencil size={11} strokeWidth={2.5} />
                                                             </button>
                                                             <button onClick={() => handleToggleAccess(user, targetActive ? 0 : 1)}
-                                                                className={`text-[8px] font-black px-2 py-1 rounded-md border transition-all ${targetActive ? 'border-slate-200 text-slate-500 hover:border-rose-500 hover:text-rose-600 hover:bg-rose-50' : 'border-emerald-500 text-emerald-600 hover:bg-emerald-600 hover:text-white'}`}>
+                                                                className={`text-[8px] font-black px-2 py-1 rounded border transition-all ${targetActive ? 'border-slate-200 text-slate-500 hover:border-rose-500 hover:text-rose-600 hover:bg-rose-50' : 'border-emerald-500 text-emerald-600 hover:bg-emerald-600 hover:text-white'}`}>
                                                                 {targetActive ? 'REVOKE' : 'RESTORE'}
                                                             </button>
                                                             {!targetActive && (
-                                                                <button onClick={() => handleDeleteUser(user)} className="p-1.5 rounded-md border border-transparent hover:border-rose-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-all" title="Wipe Record Context">
+                                                                <button onClick={() => handleDeleteUser(user)} className="p-1.5 rounded border border-transparent hover:border-rose-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-all" title="Delete">
                                                                     <Trash2 size={11} />
                                                                 </button>
                                                             )}
@@ -810,11 +906,10 @@ Password:    ${pass}
                                                 <button
                                                     key={p}
                                                     onClick={() => setActivePage(p)}
-                                                    className={`w-7 h-7 text-[9px] font-black rounded-lg border transition-all ${
-                                                        p === activePage
-                                                            ? 'bg-slate-900 text-white border-slate-900'
-                                                            : 'border-slate-200 text-slate-500 hover:bg-white hover:border-slate-400'
-                                                    }`}
+                                                    className={`w-7 h-7 text-[9px] font-black rounded-lg border transition-all ${p === activePage
+                                                        ? 'bg-slate-900 text-white border-slate-900'
+                                                        : 'border-slate-200 text-slate-500 hover:bg-white hover:border-slate-400'
+                                                        }`}
                                                 >
                                                     {p}
                                                 </button>
@@ -939,12 +1034,50 @@ Password:    ${pass}
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-[8px] font-black uppercase tracking-widest text-slate-400 block">Override Security Key <span className="font-bold text-slate-400 lowercase">(leave blank to keep current)</span></label>
-                                <div className="relative max-w-xs">
-                                    <input type={showEditPass ? 'text' : 'password'} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:border-slate-400 bg-slate-50 focus:bg-white transition-all pr-8" placeholder="Type password override string..." value={editPassword} onChange={e => setEditPassword(e.target.value)} />
-                                    <button type="button" onClick={() => setShowEditPass(!showEditPass)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                                        {showEditPass ? <EyeOff size={12} /> : <Eye size={12} />}
+                                <div className="flex items-center gap-2 max-w-xs">
+                                    {/* Generated password display */}
+                                    <div className="relative flex-1">
+                                        <input
+                                            type={showEditPass ? 'text' : 'password'}
+                                            className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:border-slate-400 bg-slate-50 focus:bg-white transition-all pr-8"
+                                            placeholder="Click Generate →"
+                                            value={editPassword}
+                                            readOnly
+                                        />
+                                        <button type="button" onClick={() => setShowEditPass(!showEditPass)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                            {showEditPass ? <EyeOff size={12} /> : <Eye size={12} />}
+                                        </button>
+                                    </div>
+                                    {/* Generate button */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
+                                            const pwd = Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+                                            setEditPassword(pwd);
+                                            setShowEditPass(true);
+                                        }}
+                                        className="shrink-0 px-3 py-1.5 bg-slate-900 hover:bg-slate-700 text-white text-[8px] font-black uppercase tracking-widest rounded-lg transition-all"
+                                    >
+                                        Generate
                                     </button>
+                                    {/* Clear button — only shows when password is set */}
+                                    {editPassword && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { setEditPassword(''); setShowEditPass(false); }}
+                                            className="shrink-0 p-1.5 text-slate-400 hover:text-red-500 transition-colors"
+                                            title="Clear"
+                                        >
+                                            <X size={13} />
+                                        </button>
+                                    )}
                                 </div>
+                                {editPassword && (
+                                    <p className="text-[8px] text-amber-600 font-bold uppercase tracking-wide mt-1">
+                                        ⚠ Share this key with the user after saving.
+                                    </p>
+                                )}
                             </div>
                             <div className="flex gap-2 pt-2 border-t border-slate-100">
                                 <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all">

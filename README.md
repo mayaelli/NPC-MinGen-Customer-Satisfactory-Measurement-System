@@ -154,4 +154,4 @@ This system was developed as an OJT capstone project for the **National Power Co
 
 ---
 
-*Developed by Marhamah S. Ali*
+
